@@ -32,6 +32,10 @@ function normalizeSquares(squares: unknown, boardSize: number): EventSquare[] {
       id: String(square.id),
       labelLine1: String(square.labelLine1),
       labelLine2: String(square.labelLine2),
+      labelLine3:
+        typeof square.labelLine3 === "string" && square.labelLine3.trim().length > 0
+          ? square.labelLine3
+          : undefined,
       order: Number(square.order),
     }))
     .sort((firstSquare, secondSquare) => firstSquare.order - secondSquare.order);

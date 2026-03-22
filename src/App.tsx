@@ -89,6 +89,10 @@ function applyTheme(event: EventConfig | null) {
   });
 }
 
+function getDisplayEventName(eventName: string) {
+  return eventName.replace(/^CAPMA\s+/i, "").trim() || eventName;
+}
+
 export default function App() {
   const [view, setView] = useState<AppView>("entry");
   const [event, setEvent] = useState<EventConfig | null>(null);
@@ -327,7 +331,9 @@ export default function App() {
       <section className="surface-card">
         <header className="space-y-2 text-center">
           <p className="eyebrow">CAPMA Event Game</p>
-          <h1 className="display-title">{event.name}</h1>
+          <h1 className="display-title display-title-single-line">
+            {getDisplayEventName(event.name)}
+          </h1>
           {error ? <p className="status-message">{error}</p> : null}
         </header>
 

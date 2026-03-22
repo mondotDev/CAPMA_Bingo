@@ -43,12 +43,11 @@ export default function BingoBoard({
   }
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-2 text-center">
-        <h2 className="section-title">{eventName} Board</h2>
-        <p className="body-copy">
-          Tap squares on or off as you go. Finish the full board to complete
-          your entry.
+    <div className="board-layout">
+      <div className="board-header">
+        <h2 className="section-title">Bingo Board</h2>
+        <p className="board-subtitle">
+          Tap squares as you go, then enter the drawing when your board is full.
         </p>
         <p className="status-note">
           {isLocked
@@ -68,6 +67,11 @@ export default function BingoBoard({
         {squares.map((square, index) => {
           const selected = markedSquareIds.includes(square.id);
           const isCenterSquare = index === centerIndex;
+          const squareLines = [
+            square.labelLine1,
+            square.labelLine2,
+            square.labelLine3,
+          ].filter(Boolean);
 
           return (
             <button
@@ -83,22 +87,29 @@ export default function BingoBoard({
               onClick={(event) => handleSquareClick(square, selected, event)}
               type="button"
             >
-              <span className="square-line">{square.labelLine1}</span>
-              <span className="square-line">{square.labelLine2}</span>
+              <span className="square-label" data-lines={squareLines.length}>
+                {squareLines.map((line) => (
+                  <span className="square-line" key={`${square.id}-${line}`}>
+                    {line}
+                  </span>
+                ))}
+              </span>
             </button>
           );
         })}
       </div>
 
       {isReadyToSubmit ? (
-        <button
-          className="button-primary"
-          disabled={isSaving || isLocked}
-          onClick={() => void onSubmitCompletedBoard()}
-          type="button"
-        >
-          {isSaving ? "Entering Drawing..." : "Enter Drawing"}
-        </button>
+        <div className="board-cta-wrap">
+          <button
+            className="button-primary board-cta-button"
+            disabled={isSaving || isLocked}
+            onClick={() => void onSubmitCompletedBoard()}
+            type="button"
+          >
+            {isSaving ? "Entering Drawing..." : "Enter Drawing"}
+          </button>
+        </div>
       ) : null}
     </div>
   );

@@ -21,6 +21,7 @@ export type EventSquare = {
   id: string;
   labelLine1: string;
   labelLine2: string;
+  labelLine3?: string;
   order: number;
 };
 
