@@ -5,9 +5,11 @@ import { launchSquarePoof } from "../lib/celebration";
 type BingoBoardProps = {
   boardSize: number;
   eventName: string;
+  isReadyToSubmit: boolean;
   isLocked: boolean;
   isSaving: boolean;
   markedSquareIds: string[];
+  onSubmitCompletedBoard: () => Promise<void>;
   onToggleSquare: (square: EventSquare) => Promise<void>;
   squares: EventSquare[];
 };
@@ -15,9 +17,11 @@ type BingoBoardProps = {
 export default function BingoBoard({
   boardSize,
   eventName,
+  isReadyToSubmit,
   isLocked,
   isSaving,
   markedSquareIds,
+  onSubmitCompletedBoard,
   onToggleSquare,
   squares,
 }: BingoBoardProps) {
@@ -51,6 +55,8 @@ export default function BingoBoard({
             ? "Your board is complete and now locked."
             : isSaving
               ? "Saving your progress..."
+              : isReadyToSubmit
+                ? "All squares are selected. Enter the drawing when you are ready."
               : "Your progress saves as you tap."}
         </p>
       </div>
@@ -83,6 +89,17 @@ export default function BingoBoard({
           );
         })}
       </div>
+
+      {isReadyToSubmit ? (
+        <button
+          className="button-primary"
+          disabled={isSaving || isLocked}
+          onClick={() => void onSubmitCompletedBoard()}
+          type="button"
+        >
+          {isSaving ? "Entering Drawing..." : "Enter Drawing"}
+        </button>
+      ) : null}
     </div>
   );
 }

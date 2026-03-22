@@ -113,24 +113,8 @@ export async function getEntryById(entryId: string): Promise<EntryRecord | null>
 export async function saveMarkedSquares(
   entryId: string,
   markedSquareIds: string[],
-  completed: boolean,
 ): Promise<EntrySaveResult> {
   const entryRef = doc(db, "entries", entryId);
-
-  if (completed) {
-    await updateDoc(entryRef, {
-      markedSquareIds,
-      completed: true,
-      completedAt: serverTimestamp(),
-      prizeEntryEligible: true,
-    });
-
-    return {
-      completed: true,
-      completedAt: new Date(),
-      prizeEntryEligible: true,
-    };
-  }
 
   await updateDoc(entryRef, {
     markedSquareIds,
@@ -140,5 +124,25 @@ export async function saveMarkedSquares(
     completed: false,
     completedAt: null,
     prizeEntryEligible: false,
+  };
+}
+
+export async function submitCompletedEntry(
+  entryId: string,
+  markedSquareIds: string[],
+): Promise<EntrySaveResult> {
+  const entryRef = doc(db, "entries", entryId);
+
+  await updateDoc(entryRef, {
+    markedSquareIds,
+    completed: true,
+    completedAt: serverTimestamp(),
+    prizeEntryEligible: true,
+  });
+
+  return {
+    completed: true,
+    completedAt: new Date(),
+    prizeEntryEligible: true,
   };
 }

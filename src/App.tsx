@@ -8,6 +8,7 @@ import type { EventConfig, EventSquare } from "./features/event/event.types";
 import {
   createOrLoadEntry,
   getEntryById,
+  submitCompletedEntry,
   saveMarkedSquares,
 } from "./features/entry/entry.api";
 import type {
@@ -169,6 +170,8 @@ export default function App() {
 
   const totalSquares = orderedSquares.length;
   const isLocked = Boolean(entry?.completed);
+  const isReadyToSubmit =
+    !isLocked && totalSquares > 0 && markedSquareIds.length === totalSquares;
 
   async function handleEntrySubmit(values: EntryFormValues) {
     if (!event) {
@@ -224,8 +227,6 @@ export default function App() {
       .map((item) => item.id)
       .filter((squareId) => nextMarkedSquareIds.includes(squareId));
 
-    const completed = orderedMarkedSquareIds.length === totalSquares;
-
     setMarkedSquareIds(orderedMarkedSquareIds);
     setBoardSaving(true);
     setError(null);
@@ -234,7 +235,6 @@ export default function App() {
       const saveResult: EntrySaveResult = await saveMarkedSquares(
         entry.id,
         orderedMarkedSquareIds,
-        completed,
       );
 
       const nextEntry: EntryRecord = {
@@ -246,21 +246,50 @@ export default function App() {
       };
 
       setEntry(nextEntry);
-
-      if (saveResult.completed && !completionCelebratedRef.current) {
-        completionCelebratedRef.current = true;
-        launchCompletionConfetti();
-      }
-
-      if (saveResult.completed) {
-        setView("completed");
-      }
     } catch (saveError) {
       setMarkedSquareIds(entry.markedSquareIds);
       setError(
         saveError instanceof Error
           ? saveError.message
           : "We could not update your bingo board.",
+      );
+    } finally {
+      setBoardSaving(false);
+    }
+  }
+
+  async function handleSubmitCompletedBoard() {
+    if (!entry || isLocked || boardSaving || !isReadyToSubmit) {
+      return;
+    }
+
+    setBoardSaving(true);
+    setError(null);
+
+    try {
+      const saveResult = await submitCompletedEntry(entry.id, markedSquareIds);
+
+      const nextEntry: EntryRecord = {
+        ...entry,
+        markedSquareIds,
+        completed: true,
+        completedAt: saveResult.completedAt ?? entry.completedAt,
+        prizeEntryEligible: true,
+      };
+
+      setEntry(nextEntry);
+
+      if (!completionCelebratedRef.current) {
+        completionCelebratedRef.current = true;
+        launchCompletionConfetti();
+      }
+
+      setView("completed");
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "We could not enter your board into the drawing.",
       );
     } finally {
       setBoardSaving(false);
@@ -322,9 +351,11 @@ export default function App() {
           <BingoBoard
             boardSize={event.boardSize}
             eventName={event.name}
+            isReadyToSubmit={isReadyToSubmit}
             isLocked={isLocked}
             isSaving={boardSaving}
             markedSquareIds={markedSquareIds}
+            onSubmitCompletedBoard={handleSubmitCompletedBoard}
             onToggleSquare={handleSquareToggle}
             squares={orderedSquares}
           />
