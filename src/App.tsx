@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import BingoBoard from "./components/BingoBoard";
 import CompletionScreen from "./components/CompletionScreen";
 import EntryForm from "./components/EntryForm";
@@ -15,6 +15,7 @@ import type {
   EntryRecord,
   EntrySaveResult,
 } from "./features/entry/entry.types";
+import { launchCompletionConfetti } from "./lib/celebration";
 
 type AppView = "entry" | "onboarding" | "board" | "completed";
 
@@ -96,6 +97,7 @@ export default function App() {
   const [entrySubmitting, setEntrySubmitting] = useState(false);
   const [boardSaving, setBoardSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const completionCelebratedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,6 +127,7 @@ export default function App() {
             if (!cancelled && storedEntry?.eventId === activeEvent.eventId) {
               setEntry(storedEntry);
               setMarkedSquareIds(storedEntry.markedSquareIds);
+              completionCelebratedRef.current = storedEntry.completed;
               setView(storedEntry.completed ? "completed" : "board");
               return;
             }
@@ -179,6 +182,7 @@ export default function App() {
       const loadedEntry = await createOrLoadEntry(event.eventId, values);
       setEntry(loadedEntry);
       setMarkedSquareIds(loadedEntry.markedSquareIds);
+      completionCelebratedRef.current = loadedEntry.completed;
       writeStoredSession(event.eventId, loadedEntry.id);
       setView(
         loadedEntry.completed
@@ -242,6 +246,11 @@ export default function App() {
       };
 
       setEntry(nextEntry);
+
+      if (saveResult.completed && !completionCelebratedRef.current) {
+        completionCelebratedRef.current = true;
+        launchCompletionConfetti();
+      }
 
       if (saveResult.completed) {
         setView("completed");

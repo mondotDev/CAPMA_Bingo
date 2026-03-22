@@ -1,4 +1,6 @@
+import type { MouseEvent } from "react";
 import type { EventSquare } from "../features/event/event.types";
+import { launchSquarePoof } from "../lib/celebration";
 
 type BingoBoardProps = {
   boardSize: number;
@@ -20,6 +22,21 @@ export default function BingoBoard({
   squares,
 }: BingoBoardProps) {
   const centerIndex = Math.floor(squares.length / 2);
+
+  function handleSquareClick(
+    square: EventSquare,
+    selected: boolean,
+    event: MouseEvent<HTMLButtonElement>,
+  ) {
+    if (!selected) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const originX = (rect.left + rect.width / 2) / window.innerWidth;
+      const originY = (rect.top + rect.height / 2) / window.innerHeight;
+      launchSquarePoof(originX, originY);
+    }
+
+    void onToggleSquare(square);
+  }
 
   return (
     <div className="space-y-5">
@@ -57,7 +74,7 @@ export default function BingoBoard({
                 .join(" ")}
               disabled={isLocked || isSaving}
               key={square.id}
-              onClick={() => onToggleSquare(square)}
+              onClick={(event) => handleSquareClick(square, selected, event)}
               type="button"
             >
               <span className="square-line">{square.labelLine1}</span>
