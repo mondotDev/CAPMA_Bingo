@@ -1,0 +1,214 @@
+@import url("https://fonts.googleapis.com/css2?family=Antonio:wght@500;700&family=Inter:wght@400;500;600&family=Montserrat:wght@600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #123f68;
+  --color-secondary: #2c7a4a;
+  --color-accent: #d4a73d;
+  --color-background: #f4f2eb;
+  --color-text: #1f2933;
+
+  --font-title: "Antonio", sans-serif;
+  --font-heading: "Montserrat", sans-serif;
+  --font-body: "Inter", sans-serif;
+}
+
+@layer base {
+  html {
+    background: var(--color-background);
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at top, color-mix(in srgb, var(--color-accent) 18%, transparent), transparent 34%),
+      linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 7%, var(--color-background)), var(--color-background));
+    color: var(--color-text);
+    font-family: var(--font-body);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .app-shell {
+    @apply mx-auto flex min-h-screen w-full max-w-md items-center px-4 py-6;
+  }
+
+  .surface-card {
+    width: 100%;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 16%, transparent);
+    background: color-mix(in srgb, var(--color-background) 92%, white);
+    box-shadow: 0 18px 40px color-mix(in srgb, var(--color-primary) 12%, transparent);
+    border-radius: 1.5rem;
+    padding: 1.5rem;
+  }
+
+  .display-title {
+    font-family: var(--font-title);
+    font-size: clamp(2rem, 7vw, 2.75rem);
+    line-height: 0.95;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+    margin: 0;
+  }
+
+  .section-title {
+    font-family: var(--font-heading);
+    font-size: 1.375rem;
+    line-height: 1.2;
+    color: var(--color-primary);
+    margin: 0;
+  }
+
+  .eyebrow {
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-secondary);
+  }
+
+  .body-copy {
+    margin: 0;
+    font-size: 0.98rem;
+    line-height: 1.55;
+    color: var(--color-text);
+  }
+
+  .status-message,
+  .status-note {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.45;
+    color: color-mix(in srgb, var(--color-primary) 82%, var(--color-text));
+  }
+
+  .field-group {
+    display: block;
+    width: 100%;
+  }
+
+  .field-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-family: var(--font-heading);
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--color-primary);
+  }
+
+  .field-input {
+    width: 100%;
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 18%, transparent);
+    background: color-mix(in srgb, var(--color-background) 90%, white);
+    color: var(--color-text);
+    padding: 0.95rem 1rem;
+    outline: none;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .field-input:focus {
+    border-color: var(--color-secondary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-secondary) 20%, transparent);
+  }
+
+  .button-primary {
+    width: 100%;
+    border: 0;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+    color: var(--color-background);
+    font-family: var(--font-heading);
+    font-size: 1rem;
+    font-weight: 700;
+    padding: 0.95rem 1.2rem;
+    cursor: pointer;
+  }
+
+  .button-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .info-panel {
+    display: grid;
+    gap: 0.75rem;
+    border-radius: 1.25rem;
+    border: 1px solid color-mix(in srgb, var(--color-secondary) 20%, transparent);
+    background: color-mix(in srgb, var(--color-secondary) 8%, var(--color-background));
+    padding: 1rem;
+  }
+
+  .board-grid {
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .board-square {
+    aspect-ratio: 1 / 1;
+    border-radius: 1.15rem;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+    background: color-mix(in srgb, var(--color-background) 92%, white);
+    color: var(--color-text);
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.08rem;
+    text-align: center;
+    transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+  }
+
+  .board-square:active {
+    transform: scale(0.98);
+  }
+
+  .board-square:disabled {
+    cursor: default;
+  }
+
+  .board-square-selected {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-secondary) 18%, var(--color-background)),
+      color-mix(in srgb, var(--color-primary) 16%, var(--color-background))
+    );
+    border-color: var(--color-secondary);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-secondary) 30%, transparent);
+  }
+
+  .board-square-center {
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+
+  .square-line {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-body);
+    font-size: clamp(0.72rem, 2.9vw, 0.92rem);
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: 0.01em;
+  }
+}
