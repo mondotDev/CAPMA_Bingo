@@ -304,6 +304,27 @@
     padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 
+  .admin-auth-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .admin-auth-card {
+    width: 100%;
+    max-width: 28rem;
+    display: grid;
+    gap: 1rem;
+    border-radius: 1.25rem;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 14%, transparent);
+    background: color-mix(in srgb, var(--color-background) 94%, white);
+    padding: 1.25rem;
+    box-shadow: 0 12px 28px color-mix(in srgb, var(--color-primary) 9%, transparent);
+  }
+
   .admin-panel {
     max-width: 1100px;
     margin: 0 auto;

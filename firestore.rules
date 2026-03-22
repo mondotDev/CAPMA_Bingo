@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isCapmaAdmin() {
+      return request.auth != null
+        && request.auth.token.email is string
+        && request.auth.token.email.matches('.*@capma\\.org$');
+    }
+
+    match /events/{eventId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /entries/{entryId} {
+      allow get: if true;
+      allow list: if isCapmaAdmin();
+      allow create: if !exists(/databases/$(database)/documents/entries/$(entryId));
+      allow update: if !resource.data.completed;
+      allow delete: if false;
+    }
+  }
+}
