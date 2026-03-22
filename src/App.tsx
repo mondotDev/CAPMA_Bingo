@@ -127,14 +127,16 @@ export default function App() {
           storedSession.eventId === activeEvent.eventId
         ) {
           try {
-            const storedEntry = await getEntryById(storedSession.entryId);
+            if (storedSession?.entryId) {
+              const storedEntry = await getEntryById(storedSession.entryId);
 
-            if (!cancelled && storedEntry?.eventId === activeEvent.eventId) {
-              setEntry(storedEntry);
-              setMarkedSquareIds(storedEntry.markedSquareIds);
-              completionCelebratedRef.current = storedEntry.completed;
-              setView(storedEntry.completed ? "completed" : "board");
-              return;
+              if (!cancelled && storedEntry?.eventId === activeEvent.eventId) {
+                setEntry(storedEntry);
+                setMarkedSquareIds(storedEntry.markedSquareIds);
+                completionCelebratedRef.current = storedEntry.completed;
+                setView(storedEntry.completed ? "completed" : "board");
+                return;
+              }
             }
 
             clearStoredSession();
