@@ -1,10 +1,14 @@
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
+  query,
   serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import type {
@@ -108,6 +112,26 @@ export async function getEntryById(entryId: string): Promise<EntryRecord | null>
   }
 
   return mapEntryRecord(entryId, entrySnapshot.data() as EntryDocument);
+}
+
+export async function getEntriesByEventId(eventId: string): Promise<EntryRecord[]> {
+  const entriesQuery = query(
+    collection(db, "entries"),
+    where("eventId", "==", eventId),
+  );
+  const snapshot = await getDocs(entriesQuery);
+
+  return snapshot.docs
+    .map((entryDocument) =>
+      mapEntryRecord(entryDocument.id, entryDocument.data() as EntryDocument),
+    )
+    .sort((firstEntry, secondEntry) => {
+      if (firstEntry.completed !== secondEntry.completed) {
+        return firstEntry.completed ? -1 : 1;
+      }
+
+      return firstEntry.name.localeCompare(secondEntry.name);
+    });
 }
 
 export async function saveMarkedSquares(
