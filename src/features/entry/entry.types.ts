@@ -7,6 +7,8 @@ export type EntryFormValues = {
 export type EntryRecord = {
   id: string;
   eventId: string;
+  ownerUid: string;
+  emailKey: string;
   name: string;
   company: string;
   email: string;
@@ -17,6 +19,7 @@ export type EntryRecord = {
   completedAt: Date | null;
   prizeEntryEligible: boolean;
   createdAt: Date | null;
+  updatedAt: Date | null;
   winnerLocked: boolean;
   winnerLockedAt: Date | null;
   winnerLockedBy: string;

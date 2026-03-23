@@ -5,11 +5,11 @@ import {
   getDoc,
   getDocs,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
-  where,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../lib/firebase";
@@ -22,6 +22,8 @@ import type {
 
 type EntryDocument = {
   eventId?: string;
+  ownerUid?: string;
+  emailKey?: string;
   name?: string;
   company?: string;
   email?: string;
@@ -32,6 +34,7 @@ type EntryDocument = {
   completedAt?: Timestamp | null;
   prizeEntryEligible?: boolean;
   createdAt?: Timestamp | null;
+  updatedAt?: Timestamp | null;
   winnerLocked?: boolean;
   winnerLockedAt?: Timestamp | null;
   winnerLockedBy?: string;
@@ -42,11 +45,15 @@ function normalizeEmail(email: string) {
 }
 
 function buildEntryId(eventId: string, normalizedEmail: string) {
-  return normalizedEmail;
+  return `${eventId}_${normalizedEmail}`;
 }
 
-function getEntryDocRef(eventId: string, entryId: string) {
-  return doc(db, "events", eventId, "entries", entryId);
+function getEntryDocRef(eventId: string, ownerUid: string) {
+  return doc(db, "events", eventId, "entries", ownerUid);
+}
+
+function getEmailIndexRef(eventId: string, emailKey: string) {
+  return doc(db, "events", eventId, "emailIndex", emailKey);
 }
 
 function toDate(value: Timestamp | null | undefined) {
@@ -63,6 +70,8 @@ function mapEntryRecord(id: string, data: EntryDocument): EntryRecord {
   return {
     id,
     eventId: data.eventId ?? "",
+    ownerUid: data.ownerUid ?? id,
+    emailKey: data.emailKey ?? data.normalizedEmail ?? data.email ?? "",
     name: data.name ?? "",
     company: data.company ?? "",
     email: data.email ?? "",
@@ -73,6 +82,7 @@ function mapEntryRecord(id: string, data: EntryDocument): EntryRecord {
     completedAt: toDate(data.completedAt),
     prizeEntryEligible: Boolean(data.prizeEntryEligible),
     createdAt: toDate(data.createdAt),
+    updatedAt: toDate(data.updatedAt),
     winnerLocked: Boolean(data.winnerLocked),
     winnerLockedAt: toDate(data.winnerLockedAt),
     winnerLockedBy: data.winnerLockedBy ?? "",
@@ -81,72 +91,96 @@ function mapEntryRecord(id: string, data: EntryDocument): EntryRecord {
 
 export async function createOrLoadEntry(
   eventId: string,
+  ownerUid: string,
   values: EntryFormValues,
 ): Promise<EntryRecord> {
-  const normalizedEmail = normalizeEmail(values.email);
-  const entryId = buildEntryId(eventId, normalizedEmail);
-  const entryRef = getEntryDocRef(eventId, entryId);
-  console.info("[board] load start", { eventId, entryId });
-  const existingEntry = await getDoc(entryRef);
-
-  if (existingEntry.exists()) {
-    console.info("[board] load success", { eventId, entryId, source: "existing" });
-    return mapEntryRecord(entryId, existingEntry.data() as EntryDocument);
-  }
-
-  const payload = {
-    eventId,
-    name: values.name.trim(),
-    company: values.company.trim(),
-    email: values.email.trim(),
-    normalizedEmail,
-    selectedSquares: [],
-    markedSquareIds: [],
-    completed: false,
-    completedAt: null,
-    prizeEntryEligible: false,
-    createdAt: serverTimestamp(),
-    winnerLocked: false,
-    winnerLockedAt: null,
-    winnerLockedBy: "",
-  };
-
+  const emailKey = normalizeEmail(values.email);
+  const entryRef = getEntryDocRef(eventId, ownerUid);
+  console.info("[board] load start", { eventId, ownerUid });
   try {
-    await setDoc(entryRef, payload);
+    const createdOrLoadedEntry = await runTransaction(db, async (transaction) => {
+      const existingEntry = await transaction.get(entryRef);
+
+      if (existingEntry.exists()) {
+        return mapEntryRecord(ownerUid, existingEntry.data() as EntryDocument);
+      }
+
+      const emailIndexRef = getEmailIndexRef(eventId, emailKey);
+      const emailIndexSnapshot = await transaction.get(emailIndexRef);
+
+      if (emailIndexSnapshot.exists()) {
+        const indexData = emailIndexSnapshot.data() as { ownerUid?: string };
+
+        if (indexData.ownerUid && indexData.ownerUid !== ownerUid) {
+          throw new Error("That email already has a board for this event.");
+        }
+      }
+
+      const payload = {
+        eventId,
+        ownerUid,
+        emailKey,
+        name: values.name.trim(),
+        company: values.company.trim(),
+        email: emailKey,
+        normalizedEmail: emailKey,
+        selectedSquares: [],
+        markedSquareIds: [],
+        completed: false,
+        completedAt: null,
+        prizeEntryEligible: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        winnerLocked: false,
+        winnerLockedAt: null,
+        winnerLockedBy: "",
+      };
+
+      transaction.set(entryRef, payload);
+      transaction.set(emailIndexRef, {
+        ownerUid,
+        createdAt: serverTimestamp(),
+      });
+
+      return {
+        id: ownerUid,
+        ...payload,
+        createdAt: null,
+        updatedAt: null,
+      };
+    });
+
+    console.info("[board] load success", { eventId, ownerUid, source: "existing-or-created" });
+    return createdOrLoadedEntry;
   } catch (error) {
     console.error("[board] load failure", error);
-    const retryEntry = await getDoc(entryRef);
-
-    if (retryEntry.exists()) {
-      console.info("[board] load success", { eventId, entryId, source: "retry" });
-      return mapEntryRecord(entryId, retryEntry.data() as EntryDocument);
-    }
-
-    throw new Error("We could not create your CAPMA Bingo entry.");
+    throw error instanceof Error
+      ? error
+      : new Error("We could not create your CAPMA Bingo entry.");
   }
-
-  return {
-    id: entryId,
-    ...payload,
-    createdAt: null,
-  };
 }
 
 export async function getEntryById(
   eventId: string,
-  entryId: string,
+  ownerUid: string,
 ): Promise<EntryRecord | null> {
-  console.info("[board] load start", { eventId, entryId });
-  const entryRef = getEntryDocRef(eventId, entryId);
-  const entrySnapshot = await getDoc(entryRef);
+  console.info("[board] load start", { eventId, ownerUid });
 
-  if (!entrySnapshot.exists()) {
-    console.info("[board] load success", { eventId, entryId, source: "missing" });
-    return null;
+  try {
+    const entryRef = getEntryDocRef(eventId, ownerUid);
+    const entrySnapshot = await getDoc(entryRef);
+
+    if (!entrySnapshot.exists()) {
+      console.info("[board] load success", { eventId, ownerUid, source: "missing" });
+      return null;
+    }
+
+    console.info("[board] load success", { eventId, ownerUid, source: "direct" });
+    return mapEntryRecord(ownerUid, entrySnapshot.data() as EntryDocument);
+  } catch (error) {
+    console.error("[board] load failure", error);
+    throw error;
   }
-
-  console.info("[board] load success", { eventId, entryId, source: "direct" });
-  return mapEntryRecord(entryId, entrySnapshot.data() as EntryDocument);
 }
 
 export async function getEntriesByEventId(eventId: string): Promise<EntryRecord[]> {
@@ -170,20 +204,21 @@ export async function getEntriesByEventId(eventId: string): Promise<EntryRecord[
 
 export async function lockWinners(
   eventId: string,
-  entryIds: string[],
+  ownerUids: string[],
   adminEmail: string,
 ): Promise<void> {
-  if (entryIds.length === 0) {
+  if (ownerUids.length === 0) {
     return;
   }
 
   const batch = writeBatch(db);
 
-  entryIds.forEach((entryId) => {
-    batch.update(getEntryDocRef(eventId, entryId), {
+  ownerUids.forEach((ownerUid) => {
+    batch.update(getEntryDocRef(eventId, ownerUid), {
       winnerLocked: true,
       winnerLockedAt: serverTimestamp(),
       winnerLockedBy: adminEmail,
+      updatedAt: serverTimestamp(),
     });
   });
 
@@ -192,9 +227,13 @@ export async function lockWinners(
 
 export async function deleteEntryById(
   eventId: string,
-  entryId: string,
+  ownerUid: string,
+  emailKey: string,
 ): Promise<void> {
-  await deleteDoc(getEntryDocRef(eventId, entryId));
+  const batch = writeBatch(db);
+  batch.delete(getEntryDocRef(eventId, ownerUid));
+  batch.delete(getEmailIndexRef(eventId, emailKey));
+  await batch.commit();
 }
 
 export async function updateEntryByAdmin(
@@ -203,72 +242,62 @@ export async function updateEntryByAdmin(
 ): Promise<EntryRecord> {
   const trimmedName = values.name.trim();
   const trimmedCompany = values.company.trim();
-  const trimmedEmail = values.email.trim();
-  const nextNormalizedEmail = normalizeEmail(trimmedEmail);
-  const nextEntryId = buildEntryId(entry.eventId, nextNormalizedEmail);
+  const nextEmailKey = normalizeEmail(values.email);
+  const entryRef = getEntryDocRef(entry.eventId, entry.ownerUid);
 
-  const nextPayload = {
-    eventId: entry.eventId,
-    name: trimmedName,
-    company: trimmedCompany,
-    email: trimmedEmail,
-    normalizedEmail: nextNormalizedEmail,
-    selectedSquares: entry.markedSquareIds,
-    markedSquareIds: entry.markedSquareIds,
-    completed: entry.completed,
-    completedAt: entry.completedAt,
-    prizeEntryEligible: entry.prizeEntryEligible,
-    createdAt: entry.createdAt,
-    winnerLocked: entry.winnerLocked,
-    winnerLockedAt: entry.winnerLockedAt,
-    winnerLockedBy: entry.winnerLockedBy,
-  };
+  await runTransaction(db, async (transaction) => {
+    const currentEntrySnapshot = await transaction.get(entryRef);
 
-  if (nextEntryId === entry.id) {
-    await updateDoc(getEntryDocRef(entry.eventId, entry.id), {
+    if (!currentEntrySnapshot.exists()) {
+      throw new Error("That entry no longer exists.");
+    }
+
+    if (nextEmailKey !== entry.emailKey) {
+      const nextEmailIndexRef = getEmailIndexRef(entry.eventId, nextEmailKey);
+      const nextEmailIndexSnapshot = await transaction.get(nextEmailIndexRef);
+
+      if (nextEmailIndexSnapshot.exists()) {
+        const indexData = nextEmailIndexSnapshot.data() as { ownerUid?: string };
+
+        if (indexData.ownerUid && indexData.ownerUid !== entry.ownerUid) {
+          throw new Error("Another entry already exists for that event and email.");
+        }
+      }
+
+      transaction.set(nextEmailIndexRef, {
+        ownerUid: entry.ownerUid,
+        createdAt: serverTimestamp(),
+      });
+      transaction.delete(getEmailIndexRef(entry.eventId, entry.emailKey));
+    }
+
+    transaction.update(entryRef, {
       name: trimmedName,
       company: trimmedCompany,
-      email: trimmedEmail,
-      normalizedEmail: nextNormalizedEmail,
+      email: nextEmailKey,
+      normalizedEmail: nextEmailKey,
+      emailKey: nextEmailKey,
+      updatedAt: serverTimestamp(),
     });
-
-    return {
-      ...entry,
-      name: trimmedName,
-      company: trimmedCompany,
-      email: trimmedEmail,
-      normalizedEmail: nextNormalizedEmail,
-    };
-  }
-
-  const existingTarget = await getDoc(getEntryDocRef(entry.eventId, nextEntryId));
-
-  if (existingTarget.exists()) {
-    throw new Error("Another entry already exists for that event and email.");
-  }
-
-  const batch = writeBatch(db);
-  batch.set(getEntryDocRef(entry.eventId, nextEntryId), nextPayload);
-  batch.delete(getEntryDocRef(entry.eventId, entry.id));
-  await batch.commit();
+  });
 
   return {
     ...entry,
-    id: nextEntryId,
     name: trimmedName,
     company: trimmedCompany,
-    email: trimmedEmail,
-    normalizedEmail: nextNormalizedEmail,
+    email: nextEmailKey,
+    normalizedEmail: nextEmailKey,
+    emailKey: nextEmailKey,
   };
 }
 
 export async function saveMarkedSquares(
   eventId: string,
-  entryId: string,
+  ownerUid: string,
   markedSquareIds: string[],
 ): Promise<EntrySaveResult> {
-  const entryRef = getEntryDocRef(eventId, entryId);
-  console.info("[board] save start", { eventId, entryId, markedSquareIds });
+  const entryRef = getEntryDocRef(eventId, ownerUid);
+  console.info("[board] save start", { eventId, ownerUid, markedSquareIds });
 
   try {
     await setDoc(
@@ -276,10 +305,11 @@ export async function saveMarkedSquares(
       {
         selectedSquares: markedSquareIds,
         markedSquareIds,
+        updatedAt: serverTimestamp(),
       },
       { merge: true },
     );
-    console.info("[board] save success", { eventId, entryId });
+    console.info("[board] save success", { eventId, ownerUid });
   } catch (error) {
     console.error("[board] save failure", error);
     throw error;
@@ -294,11 +324,11 @@ export async function saveMarkedSquares(
 
 export async function submitCompletedEntry(
   eventId: string,
-  entryId: string,
+  ownerUid: string,
   markedSquareIds: string[],
 ): Promise<EntrySaveResult> {
-  const entryRef = getEntryDocRef(eventId, entryId);
-  console.info("[board] save start", { eventId, entryId, completion: true });
+  const entryRef = getEntryDocRef(eventId, ownerUid);
+  console.info("[board] save start", { eventId, ownerUid, completion: true });
 
   try {
     await setDoc(
@@ -309,10 +339,11 @@ export async function submitCompletedEntry(
         completed: true,
         completedAt: serverTimestamp(),
         prizeEntryEligible: true,
+        updatedAt: serverTimestamp(),
       },
       { merge: true },
     );
-    console.info("[board] save success", { eventId, entryId, completion: true });
+    console.info("[board] save success", { eventId, ownerUid, completion: true });
   } catch (error) {
     console.error("[board] save failure", error);
     throw error;

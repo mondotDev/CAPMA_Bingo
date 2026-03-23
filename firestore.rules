@@ -3,62 +3,83 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function isCapmaAdmin() {
       return request.auth != null
-        && request.auth.token.email is string
-        && request.auth.token.email.matches('.*@capma\\.org$');
+        && (
+          request.auth.token.admin == true
+          || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        );
     }
 
-    function attendeeFieldsUnchanged() {
-      return request.resource.data.name == resource.data.name
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function ownerFieldsValid(uid) {
+      return request.resource.data.ownerUid == uid
+        && request.resource.data.eventId == resource.data.eventId
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.emailKey == resource.data.emailKey
+        && request.resource.data.name == resource.data.name
         && request.resource.data.company == resource.data.company
         && request.resource.data.email == resource.data.email
         && request.resource.data.normalizedEmail == resource.data.normalizedEmail
-        && request.resource.data.eventId == resource.data.eventId
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.winnerLocked == resource.data.winnerLocked
         && request.resource.data.winnerLockedAt == resource.data.winnerLockedAt
         && request.resource.data.winnerLockedBy == resource.data.winnerLockedBy;
     }
 
-    function attendeeCreateHasNoAdminOnlyFields() {
-      return (
-          !('winnerLocked' in request.resource.data)
-          || request.resource.data.winnerLocked == false
-        )
-        && (
-          !('winnerLockedAt' in request.resource.data)
-          || request.resource.data.winnerLockedAt == null
-        )
-        && (
-          !('winnerLockedBy' in request.resource.data)
-          || request.resource.data.winnerLockedBy == ""
-        );
-    }
-
     match /events/{eventId} {
       allow read: if true;
       allow write: if false;
 
-      match /entries/{email} {
+      match /entries/{uid} {
+        allow get: if isCapmaAdmin() || isOwner(uid);
+        allow list: if isCapmaAdmin();
+        allow create: if isCapmaAdmin()
+          || (
+            isOwner(uid)
+            && request.resource.data.ownerUid == uid
+            && request.resource.data.eventId == eventId
+            && request.resource.data.emailKey is string
+            && request.resource.data.name is string
+            && request.resource.data.company is string
+            && request.resource.data.selectedSquares is list
+            && request.resource.data.createdAt != null
+            && request.resource.data.updatedAt != null
+            && request.resource.data.winnerLocked == false
+            && request.resource.data.winnerLockedAt == null
+            && request.resource.data.winnerLockedBy == ""
+          );
+        allow update: if isCapmaAdmin()
+          || (
+            isOwner(uid)
+            && !resource.data.completed
+            && ownerFieldsValid(uid)
+            && request.resource.data.selectedSquares is list
+            && request.resource.data.markedSquareIds is list
+            && request.resource.data.completed is bool
+            && request.resource.data.prizeEntryEligible is bool
+            && request.resource.data.updatedAt != null
+          );
+        allow delete: if isCapmaAdmin();
+      }
+
+      match /emailIndex/{emailKey} {
         allow get: if request.auth != null;
         allow list: if isCapmaAdmin();
         allow create: if isCapmaAdmin()
           || (
             request.auth != null
-            && !exists(/databases/$(database)/documents/events/$(eventId)/entries/$(email))
-            && attendeeCreateHasNoAdminOnlyFields()
+            && request.resource.data.ownerUid == request.auth.uid
+            && !exists(/databases/$(database)/documents/events/$(eventId)/emailIndex/$(emailKey))
           );
-        allow update: if isCapmaAdmin()
-          || (
-            request.auth != null
-            && !resource.data.completed
-            && attendeeFieldsUnchanged()
-            && request.resource.data.selectedSquares is list
-            && request.resource.data.markedSquareIds is list
-            && request.resource.data.completed is bool
-            && request.resource.data.prizeEntryEligible is bool
-          );
-        allow delete: if isCapmaAdmin();
+        allow update, delete: if isCapmaAdmin();
       }
+    }
+
+    match /admins/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
     }
   }
 }

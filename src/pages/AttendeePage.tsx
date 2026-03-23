@@ -21,44 +21,8 @@ import { launchCompletionConfetti } from "../lib/celebration";
 
 type AppView = "entry" | "onboarding" | "board" | "completed";
 
-const SESSION_STORAGE_KEY = "capma-bingo-session";
-
 function getOnboardingStorageKey(eventId: string) {
   return `capma-bingo-onboarding-seen:${eventId}`;
-}
-
-function readStoredSession() {
-  const rawValue = window.localStorage.getItem(SESSION_STORAGE_KEY);
-
-  if (!rawValue) {
-    return null;
-  }
-
-  try {
-    const parsedValue = JSON.parse(rawValue) as {
-      eventId?: string;
-      entryId?: string;
-    };
-
-    if (!parsedValue.eventId || !parsedValue.entryId) {
-      return null;
-    }
-
-    return parsedValue;
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredSession(eventId: string, entryId: string) {
-  window.localStorage.setItem(
-    SESSION_STORAGE_KEY,
-    JSON.stringify({ eventId, entryId }),
-  );
-}
-
-function clearStoredSession() {
-  window.localStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
 function hasSeenOnboarding(eventId: string) {
@@ -95,7 +59,7 @@ function getDisplayEventName(eventName: string) {
 }
 
 export default function AttendeePage() {
-  const { authReady, authError } = useAppAuth();
+  const { authReady, authError, user } = useAppAuth();
   const [view, setView] = useState<AppView>("entry");
   const [event, setEvent] = useState<EventConfig | null>(null);
   const [entry, setEntry] = useState<EntryRecord | null>(null);
@@ -126,7 +90,6 @@ export default function AttendeePage() {
 
       try {
         const activeEvent = await loadActiveEvent();
-        const storedSession = readStoredSession();
 
         if (cancelled) {
           return;
@@ -135,29 +98,28 @@ export default function AttendeePage() {
         setEvent(activeEvent);
         applyTheme(activeEvent);
 
-        if (storedSession && storedSession.eventId === activeEvent.eventId) {
+        if (user?.uid) {
           try {
-            if (storedSession?.entryId) {
-              const storedEntry = await getEntryById(
-                activeEvent.eventId,
-                storedSession.entryId,
-              );
+            const storedEntry = await getEntryById(activeEvent.eventId, user.uid);
 
-              if (!cancelled && storedEntry?.eventId === activeEvent.eventId) {
-                setEntry(storedEntry);
-                setMarkedSquareIds(storedEntry.markedSquareIds);
-                completionCelebratedRef.current = storedEntry.completed;
-                setView(storedEntry.completed ? "completed" : "board");
-                return;
-              }
+            if (!cancelled && storedEntry?.eventId === activeEvent.eventId) {
+              setEntry(storedEntry);
+              setMarkedSquareIds(storedEntry.markedSquareIds);
+              completionCelebratedRef.current = storedEntry.completed;
+              setView(storedEntry.completed ? "completed" : "board");
+              return;
             }
-
-            clearStoredSession();
-          } catch {
-            clearStoredSession();
+          } catch (entryLoadError) {
+            console.error("[board] load failure", entryLoadError);
+            if (!cancelled) {
+              setError(
+                entryLoadError instanceof Error
+                  ? entryLoadError.message
+                  : "We could not load your board.",
+              );
+            }
+            return;
           }
-        } else if (storedSession && storedSession.eventId !== activeEvent.eventId) {
-          clearStoredSession();
         }
 
         setView("entry");
@@ -181,7 +143,7 @@ export default function AttendeePage() {
     return () => {
       cancelled = true;
     };
-  }, [authError, authReady]);
+  }, [authError, authReady, user?.uid]);
 
   const orderedSquares = useMemo(() => {
     return [...(event?.squares ?? [])].sort((a, b) => a.order - b.order);
@@ -193,7 +155,7 @@ export default function AttendeePage() {
     !isLocked && totalSquares > 0 && markedSquareIds.length === totalSquares;
 
   async function handleEntrySubmit(values: EntryFormValues) {
-    if (!event || !authReady) {
+    if (!event || !authReady || !user?.uid) {
       return;
     }
 
@@ -201,11 +163,10 @@ export default function AttendeePage() {
     setError(null);
 
     try {
-      const loadedEntry = await createOrLoadEntry(event.eventId, values);
+      const loadedEntry = await createOrLoadEntry(event.eventId, user.uid, values);
       setEntry(loadedEntry);
       setMarkedSquareIds(loadedEntry.markedSquareIds);
       completionCelebratedRef.current = loadedEntry.completed;
-      writeStoredSession(event.eventId, loadedEntry.id);
       setView(
         loadedEntry.completed
           ? "completed"
@@ -234,7 +195,7 @@ export default function AttendeePage() {
   }
 
   async function handleSquareToggle(square: EventSquare) {
-    if (!event || !entry || !authReady || isLocked || boardSaving) {
+    if (!event || !entry || !authReady || !user?.uid || isLocked || boardSaving) {
       return;
     }
 
@@ -253,7 +214,7 @@ export default function AttendeePage() {
     try {
       const saveResult: EntrySaveResult = await saveMarkedSquares(
         event.eventId,
-        entry.id,
+        user.uid,
         orderedMarkedSquareIds,
       );
 
@@ -280,7 +241,15 @@ export default function AttendeePage() {
   }
 
   async function handleSubmitCompletedBoard() {
-    if (!entry || !event || !authReady || isLocked || boardSaving || !isReadyToSubmit) {
+    if (
+      !entry ||
+      !event ||
+      !authReady ||
+      !user?.uid ||
+      isLocked ||
+      boardSaving ||
+      !isReadyToSubmit
+    ) {
       return;
     }
 
@@ -290,7 +259,7 @@ export default function AttendeePage() {
     try {
       const saveResult = await submitCompletedEntry(
         event.eventId,
-        entry.id,
+        user.uid,
         markedSquareIds,
       );
 
