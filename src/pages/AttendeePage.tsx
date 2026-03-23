@@ -20,6 +20,7 @@ import type {
 import { launchCompletionConfetti } from "../lib/celebration";
 
 type AppView = "entry" | "onboarding" | "board" | "completed";
+const capmaLogoSrc = "/capma-logo.png";
 
 function getOnboardingStorageKey(eventId: string) {
   return `capma-bingo-onboarding-seen:${eventId}`;
@@ -153,6 +154,10 @@ export default function AttendeePage() {
   const isLocked = Boolean(entry?.completed);
   const isReadyToSubmit =
     !isLocked && totalSquares > 0 && markedSquareIds.length === totalSquares;
+
+  useEffect(() => {
+    document.title = event?.name ? `CAPMA Bingo | ${event.name}` : "CAPMA Bingo";
+  }, [event?.name]);
 
   async function handleEntrySubmit(values: EntryFormValues) {
     if (!event || !authReady || !user?.uid) {
@@ -336,13 +341,20 @@ export default function AttendeePage() {
   return (
     <main className="app-shell">
       <section className="surface-card">
-        <header className="space-y-2 text-center">
-          <p className="eyebrow">CAPMA Event Game</p>
-          <h1 className="display-title display-title-single-line">
-            {getDisplayEventName(event.name)}
-          </h1>
-          {error ? <p className="status-message">{error}</p> : null}
+        <header className="attendee-brand-header">
+          <div className="attendee-brand-lockup">
+            <img
+              alt="CAPMA"
+              className="attendee-brand-logo"
+              height="337"
+              src={capmaLogoSrc}
+              width="461"
+            />
+            <p className="attendee-brand-event">{getDisplayEventName(event.name)}</p>
+          </div>
         </header>
+
+        {error ? <p className="attendee-brand-status status-message">{error}</p> : null}
 
         {view === "entry" ? (
           <EntryForm

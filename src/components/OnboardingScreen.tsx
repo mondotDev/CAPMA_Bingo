@@ -23,7 +23,7 @@ export default function OnboardingScreen({
 
       <div className="info-panel">
         <p className="body-copy">
-          Complete all 9 squares to finish your board. There is no free space,
+          Complete all 16 squares to finish your board. There is no free space,
           and every square counts.
         </p>
         <p className="body-copy">

@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { loadActiveEvent } from "../features/event/event.api";
+import {
+  loadActiveEventForAdmin,
+  updateActiveEventSquares,
+} from "../features/event/event.api";
 import { useAdminAuth } from "../features/admin/adminAuth";
+import type { EventSquare } from "../features/event/event.types";
 import {
   deleteEntryById,
   getEntriesByEventId,
@@ -54,7 +58,9 @@ function shuffleEntries(entries: EntryRecord[]) {
 
 export default function AdminPage() {
   const { user } = useAdminAuth();
+  const [eventId, setEventId] = useState("");
   const [eventName, setEventName] = useState("");
+  const [eventSquares, setEventSquares] = useState<EventSquare[]>([]);
   const [entries, setEntries] = useState<EntryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +80,12 @@ export default function AdminPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+  const [squareError, setSquareError] = useState<string | null>(null);
+  const [savingSquares, setSavingSquares] = useState(false);
+
+  useEffect(() => {
+    document.title = eventName ? `CAPMA Bingo | Admin | ${eventName}` : "CAPMA Bingo | Admin";
+  }, [eventName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,14 +95,16 @@ export default function AdminPage() {
       setError(null);
 
       try {
-        const activeEvent = await loadActiveEvent();
+        const activeEvent = await loadActiveEventForAdmin();
         const activeEntries = await getEntriesByEventId(activeEvent.eventId);
 
         if (cancelled) {
           return;
         }
 
+        setEventId(activeEvent.eventId);
         setEventName(activeEvent.name);
+        setEventSquares(activeEvent.squares);
         setEntries(activeEntries);
       } catch (loadError) {
         if (!cancelled) {
@@ -141,6 +155,59 @@ export default function AdminPage() {
   const drawnUnlockedWinners = useMemo(() => {
     return winnerResults.filter((winner) => !winner.winnerLocked);
   }, [winnerResults]);
+
+  function handleSquareValueChange(
+    index: number,
+    field: "labelLine1" | "labelLine2" | "labelLine3",
+    value: string,
+  ) {
+    setEventSquares((currentSquares) =>
+      currentSquares.map((square, squareIndex) =>
+        squareIndex === index
+          ? {
+              ...square,
+              [field]: value,
+            }
+          : square,
+      ),
+    );
+    setSquareError(null);
+    setActionMessage(null);
+  }
+
+  async function handleSaveSquares() {
+    if (!eventId) {
+      setSquareError("No active event is available to save.");
+      return;
+    }
+
+    setSavingSquares(true);
+    setSquareError(null);
+    setActionMessage(null);
+
+    try {
+      await updateActiveEventSquares(eventId, eventSquares);
+      setEventSquares((currentSquares) =>
+        currentSquares.map((square, index) => ({
+          ...square,
+          id: square.id.trim() || `square-${String(index + 1).padStart(2, "0")}`,
+          labelLine1: square.labelLine1.trim(),
+          labelLine2: square.labelLine2.trim(),
+          labelLine3: square.labelLine3?.trim() ?? "",
+          order: index + 1,
+        })),
+      );
+      setActionMessage("Board tiles updated.");
+    } catch (saveError) {
+      setSquareError(
+        saveError instanceof Error
+          ? saveError.message
+          : "We could not save the active event tiles.",
+      );
+    } finally {
+      setSavingSquares(false);
+    }
+  }
 
   function handleDrawWinners() {
     const requestedCount = Number.parseInt(winnerCount, 10);
@@ -374,6 +441,75 @@ export default function AdminPage() {
             <p className="eyebrow">Completed</p>
             <p className="admin-summary-value">{summary.completed}</p>
           </article>
+        </section>
+
+        <section className="admin-drawing-card">
+          <div className="space-y-2">
+            <p className="eyebrow">Board Setup</p>
+            <h2 className="section-title">Active Event Tiles</h2>
+            <p className="body-copy">
+              Edit the attendee board as a fixed 4x4 grid. Line 1 and line 2 are
+              required now, and line 3 is optional for a future sprint.
+            </p>
+          </div>
+
+          <div className="admin-square-grid">
+            {eventSquares.map((square, index) => (
+              <article className="admin-square-card" key={square.id || `square-${index + 1}`}>
+                <p className="eyebrow">Tile {index + 1}</p>
+                <div className="admin-square-fields">
+                  <label className="field-group">
+                    <span className="field-label">Line 1</span>
+                    <input
+                      className="field-input"
+                      onChange={(event) =>
+                        handleSquareValueChange(index, "labelLine1", event.target.value)
+                      }
+                      type="text"
+                      value={square.labelLine1}
+                    />
+                  </label>
+
+                  <label className="field-group">
+                    <span className="field-label">Line 2</span>
+                    <input
+                      className="field-input"
+                      onChange={(event) =>
+                        handleSquareValueChange(index, "labelLine2", event.target.value)
+                      }
+                      type="text"
+                      value={square.labelLine2}
+                    />
+                  </label>
+
+                  <label className="field-group">
+                    <span className="field-label">Line 3</span>
+                    <textarea
+                      className="field-input admin-square-textarea"
+                      onChange={(event) =>
+                        handleSquareValueChange(index, "labelLine3", event.target.value)
+                      }
+                      rows={3}
+                      value={square.labelLine3 ?? ""}
+                    />
+                  </label>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          {squareError ? <p className="status-message">{squareError}</p> : null}
+
+          <div className="admin-edit-actions">
+            <button
+              className="button-primary admin-drawing-button"
+              disabled={savingSquares || loading}
+              onClick={() => void handleSaveSquares()}
+              type="button"
+            >
+              {savingSquares ? "Saving Tiles..." : "Save Tiles"}
+            </button>
+          </div>
         </section>
 
         <section className="admin-drawing-card">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import {
   signInAdminWithGoogle,
@@ -10,6 +10,10 @@ export default function AdminLoginPage() {
   const { isAdmin, loading } = useAdminAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    document.title = "CAPMA Bingo | Admin Login";
+  }, []);
 
   async function handleSignIn() {
     setSubmitting(true);

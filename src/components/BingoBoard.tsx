@@ -16,7 +16,7 @@ type BingoBoardProps = {
 
 export default function BingoBoard({
   boardSize,
-  eventName,
+  eventName: _eventName,
   isReadyToSubmit,
   isLocked,
   isSaving,
@@ -25,8 +25,6 @@ export default function BingoBoard({
   onToggleSquare,
   squares,
 }: BingoBoardProps) {
-  const centerIndex = Math.floor(squares.length / 2);
-
   function handleSquareClick(
     square: EventSquare,
     selected: boolean,
@@ -66,19 +64,13 @@ export default function BingoBoard({
       >
         {squares.map((square, index) => {
           const selected = markedSquareIds.includes(square.id);
-          const isCenterSquare = index === centerIndex;
-          const squareLines = [
-            square.labelLine1,
-            square.labelLine2,
-            square.labelLine3,
-          ].filter(Boolean);
+          const squareLines = [square.labelLine1, square.labelLine2];
 
           return (
             <button
               className={[
                 "board-square",
                 selected ? "board-square-selected" : "",
-                isCenterSquare ? "board-square-center" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -87,7 +79,7 @@ export default function BingoBoard({
               onClick={(event) => handleSquareClick(square, selected, event)}
               type="button"
             >
-              <span className="square-label" data-lines={squareLines.length}>
+              <span className="square-label">
                 {squareLines.map((line) => (
                   <span className="square-line" key={`${square.id}-${line}`}>
                     {line}
