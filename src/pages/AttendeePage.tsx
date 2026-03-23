@@ -3,6 +3,7 @@ import BingoBoard from "../components/BingoBoard";
 import CompletionScreen from "../components/CompletionScreen";
 import EntryForm from "../components/EntryForm";
 import OnboardingScreen from "../components/OnboardingScreen";
+import { useAppAuth } from "../features/auth/appAuth";
 import { loadActiveEvent } from "../features/event/event.api";
 import type { EventConfig, EventSquare } from "../features/event/event.types";
 import {
@@ -94,6 +95,7 @@ function getDisplayEventName(eventName: string) {
 }
 
 export default function AttendeePage() {
+  const { authReady, authError } = useAppAuth();
   const [view, setView] = useState<AppView>("entry");
   const [event, setEvent] = useState<EventConfig | null>(null);
   const [entry, setEntry] = useState<EntryRecord | null>(null);
@@ -103,8 +105,19 @@ export default function AttendeePage() {
   const [boardSaving, setBoardSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const completionCelebratedRef = useRef(false);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
+    if (!authReady || initializedRef.current) {
+      return;
+    }
+
+    if (authError) {
+      setLoading(false);
+      return;
+    }
+
+    initializedRef.current = true;
     let cancelled = false;
 
     async function initialize() {
@@ -125,7 +138,10 @@ export default function AttendeePage() {
         if (storedSession && storedSession.eventId === activeEvent.eventId) {
           try {
             if (storedSession?.entryId) {
-              const storedEntry = await getEntryById(storedSession.entryId);
+              const storedEntry = await getEntryById(
+                activeEvent.eventId,
+                storedSession.entryId,
+              );
 
               if (!cancelled && storedEntry?.eventId === activeEvent.eventId) {
                 setEntry(storedEntry);
@@ -165,7 +181,7 @@ export default function AttendeePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authError, authReady]);
 
   const orderedSquares = useMemo(() => {
     return [...(event?.squares ?? [])].sort((a, b) => a.order - b.order);
@@ -177,7 +193,7 @@ export default function AttendeePage() {
     !isLocked && totalSquares > 0 && markedSquareIds.length === totalSquares;
 
   async function handleEntrySubmit(values: EntryFormValues) {
-    if (!event) {
+    if (!event || !authReady) {
       return;
     }
 
@@ -218,7 +234,7 @@ export default function AttendeePage() {
   }
 
   async function handleSquareToggle(square: EventSquare) {
-    if (!event || !entry || isLocked || boardSaving) {
+    if (!event || !entry || !authReady || isLocked || boardSaving) {
       return;
     }
 
@@ -236,12 +252,14 @@ export default function AttendeePage() {
 
     try {
       const saveResult: EntrySaveResult = await saveMarkedSquares(
+        event.eventId,
         entry.id,
         orderedMarkedSquareIds,
       );
 
       const nextEntry: EntryRecord = {
         ...entry,
+        selectedSquares: orderedMarkedSquareIds,
         markedSquareIds: orderedMarkedSquareIds,
         completed: saveResult.completed,
         completedAt: saveResult.completedAt ?? entry.completedAt,
@@ -262,7 +280,7 @@ export default function AttendeePage() {
   }
 
   async function handleSubmitCompletedBoard() {
-    if (!entry || isLocked || boardSaving || !isReadyToSubmit) {
+    if (!entry || !event || !authReady || isLocked || boardSaving || !isReadyToSubmit) {
       return;
     }
 
@@ -270,10 +288,15 @@ export default function AttendeePage() {
     setError(null);
 
     try {
-      const saveResult = await submitCompletedEntry(entry.id, markedSquareIds);
+      const saveResult = await submitCompletedEntry(
+        event.eventId,
+        entry.id,
+        markedSquareIds,
+      );
 
       const nextEntry: EntryRecord = {
         ...entry,
+        selectedSquares: markedSquareIds,
         markedSquareIds,
         completed: true,
         completedAt: saveResult.completedAt ?? entry.completedAt,
@@ -303,9 +326,25 @@ export default function AttendeePage() {
     return (
       <main className="app-shell">
         <section className="surface-card">
-          <p className="eyebrow">Loading Event</p>
+          <p className="eyebrow">{authReady ? "Loading Event" : "Starting Secure Access"}</p>
           <h1 className="display-title">CAPMA Bingo</h1>
-          <p className="body-copy">Pulling the active event configuration now.</p>
+          <p className="body-copy">
+            {authReady
+              ? "Pulling the active event configuration now."
+              : "Establishing anonymous access for public board use."}
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  if (authError) {
+    return (
+      <main className="app-shell">
+        <section className="surface-card">
+          <p className="eyebrow">Access Error</p>
+          <h1 className="display-title">CAPMA Bingo</h1>
+          <p className="body-copy">{authError}</p>
         </section>
       </main>
     );

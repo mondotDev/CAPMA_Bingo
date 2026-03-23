@@ -184,6 +184,7 @@ export default function AdminPage() {
 
     try {
       await lockWinners(
+        winnerResults[0]?.eventId ?? "",
         drawnUnlockedWinners.map((winner) => winner.id),
         adminEmail,
       );
@@ -322,7 +323,7 @@ export default function AdminPage() {
     setError(null);
 
     try {
-      await deleteEntryById(entry.id);
+      await deleteEntryById(entry.eventId, entry.id);
       setEntries((currentEntries) =>
         currentEntries.filter((currentEntry) => currentEntry.id !== entry.id),
       );

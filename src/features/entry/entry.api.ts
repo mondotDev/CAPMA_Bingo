@@ -26,6 +26,7 @@ type EntryDocument = {
   company?: string;
   email?: string;
   normalizedEmail?: string;
+  selectedSquares?: string[];
   markedSquareIds?: string[];
   completed?: boolean;
   completedAt?: Timestamp | null;
@@ -41,7 +42,11 @@ function normalizeEmail(email: string) {
 }
 
 function buildEntryId(eventId: string, normalizedEmail: string) {
-  return `${eventId}_${normalizedEmail}`;
+  return normalizedEmail;
+}
+
+function getEntryDocRef(eventId: string, entryId: string) {
+  return doc(db, "events", eventId, "entries", entryId);
 }
 
 function toDate(value: Timestamp | null | undefined) {
@@ -49,6 +54,12 @@ function toDate(value: Timestamp | null | undefined) {
 }
 
 function mapEntryRecord(id: string, data: EntryDocument): EntryRecord {
+  const selectedSquares = Array.isArray(data.selectedSquares)
+    ? data.selectedSquares
+    : Array.isArray(data.markedSquareIds)
+      ? data.markedSquareIds
+      : [];
+
   return {
     id,
     eventId: data.eventId ?? "",
@@ -56,7 +67,8 @@ function mapEntryRecord(id: string, data: EntryDocument): EntryRecord {
     company: data.company ?? "",
     email: data.email ?? "",
     normalizedEmail: data.normalizedEmail ?? "",
-    markedSquareIds: Array.isArray(data.markedSquareIds) ? data.markedSquareIds : [],
+    selectedSquares,
+    markedSquareIds: selectedSquares,
     completed: Boolean(data.completed),
     completedAt: toDate(data.completedAt),
     prizeEntryEligible: Boolean(data.prizeEntryEligible),
@@ -73,10 +85,12 @@ export async function createOrLoadEntry(
 ): Promise<EntryRecord> {
   const normalizedEmail = normalizeEmail(values.email);
   const entryId = buildEntryId(eventId, normalizedEmail);
-  const entryRef = doc(db, "entries", entryId);
+  const entryRef = getEntryDocRef(eventId, entryId);
+  console.info("[board] load start", { eventId, entryId });
   const existingEntry = await getDoc(entryRef);
 
   if (existingEntry.exists()) {
+    console.info("[board] load success", { eventId, entryId, source: "existing" });
     return mapEntryRecord(entryId, existingEntry.data() as EntryDocument);
   }
 
@@ -86,6 +100,7 @@ export async function createOrLoadEntry(
     company: values.company.trim(),
     email: values.email.trim(),
     normalizedEmail,
+    selectedSquares: [],
     markedSquareIds: [],
     completed: false,
     completedAt: null,
@@ -98,10 +113,12 @@ export async function createOrLoadEntry(
 
   try {
     await setDoc(entryRef, payload);
-  } catch {
+  } catch (error) {
+    console.error("[board] load failure", error);
     const retryEntry = await getDoc(entryRef);
 
     if (retryEntry.exists()) {
+      console.info("[board] load success", { eventId, entryId, source: "retry" });
       return mapEntryRecord(entryId, retryEntry.data() as EntryDocument);
     }
 
@@ -115,21 +132,26 @@ export async function createOrLoadEntry(
   };
 }
 
-export async function getEntryById(entryId: string): Promise<EntryRecord | null> {
-  const entryRef = doc(db, "entries", entryId);
+export async function getEntryById(
+  eventId: string,
+  entryId: string,
+): Promise<EntryRecord | null> {
+  console.info("[board] load start", { eventId, entryId });
+  const entryRef = getEntryDocRef(eventId, entryId);
   const entrySnapshot = await getDoc(entryRef);
 
   if (!entrySnapshot.exists()) {
+    console.info("[board] load success", { eventId, entryId, source: "missing" });
     return null;
   }
 
+  console.info("[board] load success", { eventId, entryId, source: "direct" });
   return mapEntryRecord(entryId, entrySnapshot.data() as EntryDocument);
 }
 
 export async function getEntriesByEventId(eventId: string): Promise<EntryRecord[]> {
   const entriesQuery = query(
-    collection(db, "entries"),
-    where("eventId", "==", eventId),
+    collection(db, "events", eventId, "entries"),
   );
   const snapshot = await getDocs(entriesQuery);
 
@@ -147,6 +169,7 @@ export async function getEntriesByEventId(eventId: string): Promise<EntryRecord[
 }
 
 export async function lockWinners(
+  eventId: string,
   entryIds: string[],
   adminEmail: string,
 ): Promise<void> {
@@ -157,7 +180,7 @@ export async function lockWinners(
   const batch = writeBatch(db);
 
   entryIds.forEach((entryId) => {
-    batch.update(doc(db, "entries", entryId), {
+    batch.update(getEntryDocRef(eventId, entryId), {
       winnerLocked: true,
       winnerLockedAt: serverTimestamp(),
       winnerLockedBy: adminEmail,
@@ -167,8 +190,11 @@ export async function lockWinners(
   await batch.commit();
 }
 
-export async function deleteEntryById(entryId: string): Promise<void> {
-  await deleteDoc(doc(db, "entries", entryId));
+export async function deleteEntryById(
+  eventId: string,
+  entryId: string,
+): Promise<void> {
+  await deleteDoc(getEntryDocRef(eventId, entryId));
 }
 
 export async function updateEntryByAdmin(
@@ -187,6 +213,7 @@ export async function updateEntryByAdmin(
     company: trimmedCompany,
     email: trimmedEmail,
     normalizedEmail: nextNormalizedEmail,
+    selectedSquares: entry.markedSquareIds,
     markedSquareIds: entry.markedSquareIds,
     completed: entry.completed,
     completedAt: entry.completedAt,
@@ -198,7 +225,7 @@ export async function updateEntryByAdmin(
   };
 
   if (nextEntryId === entry.id) {
-    await updateDoc(doc(db, "entries", entry.id), {
+    await updateDoc(getEntryDocRef(entry.eventId, entry.id), {
       name: trimmedName,
       company: trimmedCompany,
       email: trimmedEmail,
@@ -214,15 +241,15 @@ export async function updateEntryByAdmin(
     };
   }
 
-  const existingTarget = await getDoc(doc(db, "entries", nextEntryId));
+  const existingTarget = await getDoc(getEntryDocRef(entry.eventId, nextEntryId));
 
   if (existingTarget.exists()) {
     throw new Error("Another entry already exists for that event and email.");
   }
 
   const batch = writeBatch(db);
-  batch.set(doc(db, "entries", nextEntryId), nextPayload);
-  batch.delete(doc(db, "entries", entry.id));
+  batch.set(getEntryDocRef(entry.eventId, nextEntryId), nextPayload);
+  batch.delete(getEntryDocRef(entry.eventId, entry.id));
   await batch.commit();
 
   return {
@@ -236,14 +263,27 @@ export async function updateEntryByAdmin(
 }
 
 export async function saveMarkedSquares(
+  eventId: string,
   entryId: string,
   markedSquareIds: string[],
 ): Promise<EntrySaveResult> {
-  const entryRef = doc(db, "entries", entryId);
+  const entryRef = getEntryDocRef(eventId, entryId);
+  console.info("[board] save start", { eventId, entryId, markedSquareIds });
 
-  await updateDoc(entryRef, {
-    markedSquareIds,
-  });
+  try {
+    await setDoc(
+      entryRef,
+      {
+        selectedSquares: markedSquareIds,
+        markedSquareIds,
+      },
+      { merge: true },
+    );
+    console.info("[board] save success", { eventId, entryId });
+  } catch (error) {
+    console.error("[board] save failure", error);
+    throw error;
+  }
 
   return {
     completed: false,
@@ -253,17 +293,30 @@ export async function saveMarkedSquares(
 }
 
 export async function submitCompletedEntry(
+  eventId: string,
   entryId: string,
   markedSquareIds: string[],
 ): Promise<EntrySaveResult> {
-  const entryRef = doc(db, "entries", entryId);
+  const entryRef = getEntryDocRef(eventId, entryId);
+  console.info("[board] save start", { eventId, entryId, completion: true });
 
-  await updateDoc(entryRef, {
-    markedSquareIds,
-    completed: true,
-    completedAt: serverTimestamp(),
-    prizeEntryEligible: true,
-  });
+  try {
+    await setDoc(
+      entryRef,
+      {
+        selectedSquares: markedSquareIds,
+        markedSquareIds,
+        completed: true,
+        completedAt: serverTimestamp(),
+        prizeEntryEligible: true,
+      },
+      { merge: true },
+    );
+    console.info("[board] save success", { eventId, entryId, completion: true });
+  } catch (error) {
+    console.error("[board] save failure", error);
+    throw error;
+  }
 
   return {
     completed: true,

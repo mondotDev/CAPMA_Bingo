@@ -11,6 +11,7 @@ export type EntryRecord = {
   company: string;
   email: string;
   normalizedEmail: string;
+  selectedSquares: string[];
   markedSquareIds: string[];
   completed: boolean;
   completedAt: Date | null;
