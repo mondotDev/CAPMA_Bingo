@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { loadActiveEvent } from "../features/event/event.api";
-import { getEntriesByEventId } from "../features/entry/entry.api";
-import type { EntryRecord } from "../features/entry/entry.types";
+import { useAdminAuth } from "../features/admin/adminAuth";
+import {
+  deleteEntryById,
+  getEntriesByEventId,
+  lockWinners,
+  updateEntryByAdmin,
+} from "../features/entry/entry.api";
+import type {
+  AdminEntryUpdateValues,
+  EntryRecord,
+} from "../features/entry/entry.types";
 
 type WinnerFilter = "completed" | "all";
 
@@ -44,6 +53,7 @@ function shuffleEntries(entries: EntryRecord[]) {
 }
 
 export default function AdminPage() {
+  const { user } = useAdminAuth();
   const [eventName, setEventName] = useState("");
   const [entries, setEntries] = useState<EntryRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +63,17 @@ export default function AdminPage() {
   const [winnerError, setWinnerError] = useState<string | null>(null);
   const [winnerResults, setWinnerResults] = useState<EntryRecord[]>([]);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [lockingWinners, setLockingWinners] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<AdminEntryUpdateValues>({
+    name: "",
+    company: "",
+    email: "",
+  });
+  const [editError, setEditError] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,18 +125,29 @@ export default function AdminPage() {
   }, [entries]);
 
   const eligiblePool = useMemo(() => {
+    const unlockedEntries = entries.filter((entry) => !entry.winnerLocked);
+
     if (winnerFilter === "all") {
-      return entries;
+      return unlockedEntries;
     }
 
-    return entries.filter((entry) => entry.completed);
+    return unlockedEntries.filter((entry) => entry.completed);
   }, [entries, winnerFilter]);
+
+  const editableEntry = useMemo(() => {
+    return entries.find((entry) => entry.id === editingEntryId) ?? null;
+  }, [editingEntryId, entries]);
+
+  const drawnUnlockedWinners = useMemo(() => {
+    return winnerResults.filter((winner) => !winner.winnerLocked);
+  }, [winnerResults]);
 
   function handleDrawWinners() {
     const requestedCount = Number.parseInt(winnerCount, 10);
 
     setWinnerError(null);
     setCopyMessage(null);
+    setActionMessage(null);
 
     if (eligiblePool.length === 0) {
       setWinnerResults([]);
@@ -139,6 +171,60 @@ export default function AdminPage() {
     setWinnerResults(winners);
   }
 
+  async function handleLockWinners() {
+    const adminEmail = user?.email?.trim().toLowerCase();
+
+    if (!adminEmail || drawnUnlockedWinners.length === 0) {
+      return;
+    }
+
+    setLockingWinners(true);
+    setWinnerError(null);
+    setActionMessage(null);
+
+    try {
+      await lockWinners(
+        drawnUnlockedWinners.map((winner) => winner.id),
+        adminEmail,
+      );
+
+      const lockedAt = new Date();
+      const nextWinnerResults = winnerResults.map((winner) =>
+        drawnUnlockedWinners.some((drawnWinner) => drawnWinner.id === winner.id)
+          ? {
+              ...winner,
+              winnerLocked: true,
+              winnerLockedAt: lockedAt,
+              winnerLockedBy: adminEmail,
+            }
+          : winner,
+      );
+
+      setWinnerResults(nextWinnerResults);
+      setEntries((currentEntries) =>
+        currentEntries.map((entry) =>
+          drawnUnlockedWinners.some((winner) => winner.id === entry.id)
+            ? {
+                ...entry,
+                winnerLocked: true,
+                winnerLockedAt: lockedAt,
+                winnerLockedBy: adminEmail,
+              }
+            : entry,
+        ),
+      );
+      setActionMessage("Winners locked and excluded from future drawings.");
+    } catch (lockError) {
+      setWinnerError(
+        lockError instanceof Error
+          ? lockError.message
+          : "We could not lock the selected winners.",
+      );
+    } finally {
+      setLockingWinners(false);
+    }
+  }
+
   async function handleCopyWinners() {
     if (winnerResults.length === 0) {
       return;
@@ -155,6 +241,103 @@ export default function AdminPage() {
       setCopyMessage("Winners copied.");
     } catch {
       setCopyMessage("Unable to copy winners on this device.");
+    }
+  }
+
+  function handleStartEdit(entry: EntryRecord) {
+    setEditingEntryId(entry.id);
+    setEditValues({
+      name: entry.name,
+      company: entry.company,
+      email: entry.email,
+    });
+    setEditError(null);
+    setActionMessage(null);
+  }
+
+  function handleCancelEdit() {
+    setEditingEntryId(null);
+    setEditError(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!editableEntry) {
+      return;
+    }
+
+    setSavingEdit(true);
+    setEditError(null);
+    setActionMessage(null);
+
+    try {
+      const updatedEntry = await updateEntryByAdmin(editableEntry, editValues);
+
+      setEntries((currentEntries) =>
+        currentEntries
+          .filter((entry) => entry.id !== editableEntry.id)
+          .concat(updatedEntry)
+          .sort((firstEntry, secondEntry) => {
+            if (firstEntry.winnerLocked !== secondEntry.winnerLocked) {
+              return firstEntry.winnerLocked ? 1 : -1;
+            }
+
+            if (firstEntry.completed !== secondEntry.completed) {
+              return firstEntry.completed ? -1 : 1;
+            }
+
+            return firstEntry.name.localeCompare(secondEntry.name);
+          }),
+      );
+      setWinnerResults((currentWinners) =>
+        currentWinners.map((winner) =>
+          winner.id === editableEntry.id || winner.id === updatedEntry.id
+            ? updatedEntry
+            : winner,
+        ),
+      );
+      setEditingEntryId(null);
+      setActionMessage("Entry updated.");
+    } catch (saveError) {
+      setEditError(
+        saveError instanceof Error
+          ? saveError.message
+          : "We could not save that entry.",
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleDeleteEntry(entry: EntryRecord) {
+    const confirmed = window.confirm(
+      `Delete entry for ${entry.name || entry.email}? This cannot be undone.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingEntryId(entry.id);
+    setActionMessage(null);
+    setError(null);
+
+    try {
+      await deleteEntryById(entry.id);
+      setEntries((currentEntries) =>
+        currentEntries.filter((currentEntry) => currentEntry.id !== entry.id),
+      );
+      setWinnerResults((currentWinners) =>
+        currentWinners.filter((winner) => winner.id !== entry.id),
+      );
+      setActionMessage("Entry deleted.");
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "We could not delete that entry.",
+      );
+    } finally {
+      setDeletingEntryId(null);
     }
   }
 
@@ -175,6 +358,7 @@ export default function AdminPage() {
         </header>
 
         {error ? <p className="status-message">{error}</p> : null}
+        {actionMessage ? <p className="status-note">{actionMessage}</p> : null}
 
         <section className="admin-summary-grid">
           <article className="admin-summary-card">
@@ -197,7 +381,7 @@ export default function AdminPage() {
             <h2 className="section-title">Random Winner Selection</h2>
             <p className="body-copy">
               Draw from all entries or only completed entries. Winners are selected
-              randomly from the current admin dataset.
+              randomly from the current admin dataset. Locked winners are excluded.
             </p>
           </div>
 
@@ -245,13 +429,23 @@ export default function AdminPage() {
             <div className="admin-winners-wrap">
               <div className="admin-winners-header">
                 <h3 className="admin-entry-title">Winner Results</h3>
-                <button
-                  className="admin-link-button"
-                  onClick={() => void handleCopyWinners()}
-                  type="button"
-                >
-                  Copy Winners
-                </button>
+                <div className="admin-winner-actions">
+                  <button
+                    className="admin-link-button"
+                    onClick={() => void handleCopyWinners()}
+                    type="button"
+                  >
+                    Copy Winners
+                  </button>
+                  <button
+                    className="admin-link-button"
+                    disabled={lockingWinners || drawnUnlockedWinners.length === 0}
+                    onClick={() => void handleLockWinners()}
+                    type="button"
+                  >
+                    {lockingWinners ? "Locking..." : "Lock Winners"}
+                  </button>
+                </div>
               </div>
 
               <div className="admin-winners-list">
@@ -261,6 +455,11 @@ export default function AdminPage() {
                     <h4 className="admin-entry-title">{winner.name}</h4>
                     <p className="body-copy">{winner.company || "No company provided"}</p>
                     <p className="admin-entry-email">{winner.email}</p>
+                    <p className="status-note">
+                      {winner.winnerLocked
+                        ? `Locked${winner.winnerLockedBy ? ` by ${winner.winnerLockedBy}` : ""}`
+                        : "Not locked"}
+                    </p>
                     <p className="status-note">
                       Timestamp: {formatWinnerTimestamp(winner)}
                     </p>
@@ -280,19 +479,21 @@ export default function AdminPage() {
                 <th>Email</th>
                 <th>Selected</th>
                 <th>Status</th>
+                <th>Winner Lock</th>
                 <th>Completed At</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td className="admin-empty-cell" colSpan={6}>
+                  <td className="admin-empty-cell" colSpan={8}>
                     Loading entries...
                   </td>
                 </tr>
               ) : entries.length === 0 ? (
                 <tr>
-                  <td className="admin-empty-cell" colSpan={6}>
+                  <td className="admin-empty-cell" colSpan={8}>
                     No entries found for the active event.
                   </td>
                 </tr>
@@ -314,7 +515,37 @@ export default function AdminPage() {
                         {entry.completed ? "Completed" : "In Progress"}
                       </span>
                     </td>
+                    <td>
+                      <span
+                        className={
+                          entry.winnerLocked
+                            ? "admin-status admin-status-locked"
+                            : "admin-status"
+                        }
+                      >
+                        {entry.winnerLocked ? "Locked" : "Open"}
+                      </span>
+                    </td>
                     <td>{formatCompletedAt(entry.completedAt)}</td>
+                    <td>
+                      <div className="admin-row-actions">
+                        <button
+                          className="admin-link-button"
+                          onClick={() => handleStartEdit(entry)}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="admin-link-button admin-link-button-danger"
+                          disabled={deletingEntryId === entry.id}
+                          onClick={() => void handleDeleteEntry(entry)}
+                          type="button"
+                        >
+                          {deletingEntryId === entry.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -349,14 +580,119 @@ export default function AdminPage() {
                     <dd>{entry.completed ? "Completed" : "In Progress"}</dd>
                   </div>
                   <div>
+                    <dt>Winner Lock</dt>
+                    <dd>
+                      {entry.winnerLocked
+                        ? `Locked${entry.winnerLockedBy ? ` by ${entry.winnerLockedBy}` : ""}`
+                        : "Open"}
+                    </dd>
+                  </div>
+                  <div>
                     <dt>Completed At</dt>
                     <dd>{formatCompletedAt(entry.completedAt)}</dd>
                   </div>
                 </dl>
+                <div className="admin-card-actions">
+                  <button
+                    className="admin-link-button"
+                    onClick={() => handleStartEdit(entry)}
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="admin-link-button admin-link-button-danger"
+                    disabled={deletingEntryId === entry.id}
+                    onClick={() => void handleDeleteEntry(entry)}
+                    type="button"
+                  >
+                    {deletingEntryId === entry.id ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
               </article>
             ))
           )}
         </section>
+
+        {editableEntry ? (
+          <section className="admin-edit-card">
+            <div className="space-y-2">
+              <p className="eyebrow">Edit Entry</p>
+              <h2 className="section-title">Update Participant</h2>
+              <p className="body-copy">
+                Update the participant details for this event entry.
+              </p>
+            </div>
+
+            <div className="admin-edit-grid">
+              <label className="field-group">
+                <span className="field-label">Name</span>
+                <input
+                  className="field-input"
+                  onChange={(event) =>
+                    setEditValues((currentValues) => ({
+                      ...currentValues,
+                      name: event.target.value,
+                    }))
+                  }
+                  type="text"
+                  value={editValues.name}
+                />
+              </label>
+
+              <label className="field-group">
+                <span className="field-label">Company</span>
+                <input
+                  className="field-input"
+                  onChange={(event) =>
+                    setEditValues((currentValues) => ({
+                      ...currentValues,
+                      company: event.target.value,
+                    }))
+                  }
+                  type="text"
+                  value={editValues.company}
+                />
+              </label>
+
+              <label className="field-group">
+                <span className="field-label">Email</span>
+                <input
+                  className="field-input"
+                  onChange={(event) =>
+                    setEditValues((currentValues) => ({
+                      ...currentValues,
+                      email: event.target.value,
+                    }))
+                  }
+                  type="email"
+                  value={editValues.email}
+                />
+              </label>
+            </div>
+
+            {editError ? <p className="status-message">{editError}</p> : null}
+
+            <div className="admin-edit-actions">
+              <button
+                className="button-primary admin-drawing-button"
+                disabled={savingEdit}
+                onClick={() => void handleSaveEdit()}
+                type="button"
+              >
+                {savingEdit ? "Saving..." : "Save Changes"}
+              </button>
+              <button
+                className="admin-link-button"
+                disabled={savingEdit}
+                onClick={handleCancelEdit}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </section>
+        ) : null}
       </section>
     </main>
   );

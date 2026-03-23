@@ -7,6 +7,33 @@ service cloud.firestore {
         && request.auth.token.email.matches('.*@capma\\.org$');
     }
 
+    function attendeeFieldsUnchanged() {
+      return request.resource.data.name == resource.data.name
+        && request.resource.data.company == resource.data.company
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.normalizedEmail == resource.data.normalizedEmail
+        && request.resource.data.eventId == resource.data.eventId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.winnerLocked == resource.data.winnerLocked
+        && request.resource.data.winnerLockedAt == resource.data.winnerLockedAt
+        && request.resource.data.winnerLockedBy == resource.data.winnerLockedBy;
+    }
+
+    function attendeeCreateHasNoAdminOnlyFields() {
+      return (
+          !('winnerLocked' in request.resource.data)
+          || request.resource.data.winnerLocked == false
+        )
+        && (
+          !('winnerLockedAt' in request.resource.data)
+          || request.resource.data.winnerLockedAt == null
+        )
+        && (
+          !('winnerLockedBy' in request.resource.data)
+          || request.resource.data.winnerLockedBy == ""
+        );
+    }
+
     match /events/{eventId} {
       allow read: if true;
       allow write: if false;
@@ -15,9 +42,20 @@ service cloud.firestore {
     match /entries/{entryId} {
       allow get: if true;
       allow list: if isCapmaAdmin();
-      allow create: if !exists(/databases/$(database)/documents/entries/$(entryId));
-      allow update: if !resource.data.completed;
-      allow delete: if false;
+      allow create: if isCapmaAdmin()
+        || (
+          !exists(/databases/$(database)/documents/entries/$(entryId))
+          && attendeeCreateHasNoAdminOnlyFields()
+        );
+      allow update: if isCapmaAdmin()
+        || (
+          !resource.data.completed
+          && attendeeFieldsUnchanged()
+          && request.resource.data.markedSquareIds is list
+          && request.resource.data.completed is bool
+          && request.resource.data.prizeEntryEligible is bool
+        );
+      allow delete: if isCapmaAdmin();
     }
   }
 }

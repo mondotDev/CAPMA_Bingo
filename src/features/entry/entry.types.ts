@@ -16,10 +16,19 @@ export type EntryRecord = {
   completedAt: Date | null;
   prizeEntryEligible: boolean;
   createdAt: Date | null;
+  winnerLocked: boolean;
+  winnerLockedAt: Date | null;
+  winnerLockedBy: string;
 };
 
 export type EntrySaveResult = {
   completed: boolean;
   completedAt: Date | null;
   prizeEntryEligible: boolean;
+};
+
+export type AdminEntryUpdateValues = {
+  name: string;
+  company: string;
+  email: string;
 };

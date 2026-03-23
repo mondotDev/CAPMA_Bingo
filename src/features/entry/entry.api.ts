@@ -1,4 +1,5 @@
 import {
+  deleteDoc,
   collection,
   doc,
   getDoc,
@@ -9,9 +10,11 @@ import {
   Timestamp,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import type {
+  AdminEntryUpdateValues,
   EntryFormValues,
   EntryRecord,
   EntrySaveResult,
@@ -28,6 +31,9 @@ type EntryDocument = {
   completedAt?: Timestamp | null;
   prizeEntryEligible?: boolean;
   createdAt?: Timestamp | null;
+  winnerLocked?: boolean;
+  winnerLockedAt?: Timestamp | null;
+  winnerLockedBy?: string;
 };
 
 function normalizeEmail(email: string) {
@@ -55,6 +61,9 @@ function mapEntryRecord(id: string, data: EntryDocument): EntryRecord {
     completedAt: toDate(data.completedAt),
     prizeEntryEligible: Boolean(data.prizeEntryEligible),
     createdAt: toDate(data.createdAt),
+    winnerLocked: Boolean(data.winnerLocked),
+    winnerLockedAt: toDate(data.winnerLockedAt),
+    winnerLockedBy: data.winnerLockedBy ?? "",
   };
 }
 
@@ -82,6 +91,9 @@ export async function createOrLoadEntry(
     completedAt: null,
     prizeEntryEligible: false,
     createdAt: serverTimestamp(),
+    winnerLocked: false,
+    winnerLockedAt: null,
+    winnerLockedBy: "",
   };
 
   try {
@@ -132,6 +144,95 @@ export async function getEntriesByEventId(eventId: string): Promise<EntryRecord[
 
       return firstEntry.name.localeCompare(secondEntry.name);
     });
+}
+
+export async function lockWinners(
+  entryIds: string[],
+  adminEmail: string,
+): Promise<void> {
+  if (entryIds.length === 0) {
+    return;
+  }
+
+  const batch = writeBatch(db);
+
+  entryIds.forEach((entryId) => {
+    batch.update(doc(db, "entries", entryId), {
+      winnerLocked: true,
+      winnerLockedAt: serverTimestamp(),
+      winnerLockedBy: adminEmail,
+    });
+  });
+
+  await batch.commit();
+}
+
+export async function deleteEntryById(entryId: string): Promise<void> {
+  await deleteDoc(doc(db, "entries", entryId));
+}
+
+export async function updateEntryByAdmin(
+  entry: EntryRecord,
+  values: AdminEntryUpdateValues,
+): Promise<EntryRecord> {
+  const trimmedName = values.name.trim();
+  const trimmedCompany = values.company.trim();
+  const trimmedEmail = values.email.trim();
+  const nextNormalizedEmail = normalizeEmail(trimmedEmail);
+  const nextEntryId = buildEntryId(entry.eventId, nextNormalizedEmail);
+
+  const nextPayload = {
+    eventId: entry.eventId,
+    name: trimmedName,
+    company: trimmedCompany,
+    email: trimmedEmail,
+    normalizedEmail: nextNormalizedEmail,
+    markedSquareIds: entry.markedSquareIds,
+    completed: entry.completed,
+    completedAt: entry.completedAt,
+    prizeEntryEligible: entry.prizeEntryEligible,
+    createdAt: entry.createdAt,
+    winnerLocked: entry.winnerLocked,
+    winnerLockedAt: entry.winnerLockedAt,
+    winnerLockedBy: entry.winnerLockedBy,
+  };
+
+  if (nextEntryId === entry.id) {
+    await updateDoc(doc(db, "entries", entry.id), {
+      name: trimmedName,
+      company: trimmedCompany,
+      email: trimmedEmail,
+      normalizedEmail: nextNormalizedEmail,
+    });
+
+    return {
+      ...entry,
+      name: trimmedName,
+      company: trimmedCompany,
+      email: trimmedEmail,
+      normalizedEmail: nextNormalizedEmail,
+    };
+  }
+
+  const existingTarget = await getDoc(doc(db, "entries", nextEntryId));
+
+  if (existingTarget.exists()) {
+    throw new Error("Another entry already exists for that event and email.");
+  }
+
+  const batch = writeBatch(db);
+  batch.set(doc(db, "entries", nextEntryId), nextPayload);
+  batch.delete(doc(db, "entries", entry.id));
+  await batch.commit();
+
+  return {
+    ...entry,
+    id: nextEntryId,
+    name: trimmedName,
+    company: trimmedCompany,
+    email: trimmedEmail,
+    normalizedEmail: nextNormalizedEmail,
+  };
 }
 
 export async function saveMarkedSquares(
