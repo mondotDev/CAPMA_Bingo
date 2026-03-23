@@ -8,7 +8,7 @@ import { loadActiveEvent } from "../features/event/event.api";
 import type { EventConfig, EventSquare } from "../features/event/event.types";
 import {
   createOrLoadEntry,
-  getEntryById,
+  getEntryByEmail,
   saveMarkedSquares,
   submitCompletedEntry,
 } from "../features/entry/entry.api";
@@ -26,12 +26,24 @@ function getOnboardingStorageKey(eventId: string) {
   return `capma-bingo-onboarding-seen:${eventId}`;
 }
 
+function getEntryEmailStorageKey(eventId: string) {
+  return `capma-bingo-entry-email:${eventId}`;
+}
+
 function hasSeenOnboarding(eventId: string) {
   return window.localStorage.getItem(getOnboardingStorageKey(eventId)) === "true";
 }
 
 function markOnboardingSeen(eventId: string) {
   window.localStorage.setItem(getOnboardingStorageKey(eventId), "true");
+}
+
+function getStoredEntryEmail(eventId: string) {
+  return window.localStorage.getItem(getEntryEmailStorageKey(eventId)) ?? "";
+}
+
+function storeEntryEmail(eventId: string, email: string) {
+  window.localStorage.setItem(getEntryEmailStorageKey(eventId), email.trim().toLowerCase());
 }
 
 function applyTheme(event: EventConfig | null) {
@@ -60,7 +72,7 @@ function getDisplayEventName(eventName: string) {
 }
 
 export default function AttendeePage() {
-  const { authReady, authError, user } = useAppAuth();
+  const { authReady, authError } = useAppAuth();
   const [view, setView] = useState<AppView>("entry");
   const [event, setEvent] = useState<EventConfig | null>(null);
   const [entry, setEntry] = useState<EntryRecord | null>(null);
@@ -99,9 +111,11 @@ export default function AttendeePage() {
         setEvent(activeEvent);
         applyTheme(activeEvent);
 
-        if (user?.uid) {
+        const storedEntryEmail = getStoredEntryEmail(activeEvent.eventId);
+
+        if (storedEntryEmail) {
           try {
-            const storedEntry = await getEntryById(activeEvent.eventId, user.uid);
+            const storedEntry = await getEntryByEmail(activeEvent.eventId, storedEntryEmail);
 
             if (!cancelled && storedEntry?.eventId === activeEvent.eventId) {
               setEntry(storedEntry);
@@ -144,7 +158,7 @@ export default function AttendeePage() {
     return () => {
       cancelled = true;
     };
-  }, [authError, authReady, user?.uid]);
+  }, [authError, authReady]);
 
   const orderedSquares = useMemo(() => {
     return [...(event?.squares ?? [])].sort((a, b) => a.order - b.order);
@@ -160,7 +174,7 @@ export default function AttendeePage() {
   }, [event?.name]);
 
   async function handleEntrySubmit(values: EntryFormValues) {
-    if (!event || !authReady || !user?.uid) {
+    if (!event || !authReady) {
       return;
     }
 
@@ -168,7 +182,8 @@ export default function AttendeePage() {
     setError(null);
 
     try {
-      const loadedEntry = await createOrLoadEntry(event.eventId, user.uid, values);
+      const loadedEntry = await createOrLoadEntry(event.eventId, values);
+      storeEntryEmail(event.eventId, loadedEntry.emailKey);
       setEntry(loadedEntry);
       setMarkedSquareIds(loadedEntry.markedSquareIds);
       completionCelebratedRef.current = loadedEntry.completed;
@@ -200,7 +215,7 @@ export default function AttendeePage() {
   }
 
   async function handleSquareToggle(square: EventSquare) {
-    if (!event || !entry || !authReady || !user?.uid || isLocked || boardSaving) {
+    if (!event || !entry || !authReady || isLocked || boardSaving) {
       return;
     }
 
@@ -219,7 +234,7 @@ export default function AttendeePage() {
     try {
       const saveResult: EntrySaveResult = await saveMarkedSquares(
         event.eventId,
-        user.uid,
+        entry.id,
         orderedMarkedSquareIds,
       );
 
@@ -250,7 +265,6 @@ export default function AttendeePage() {
       !entry ||
       !event ||
       !authReady ||
-      !user?.uid ||
       isLocked ||
       boardSaving ||
       !isReadyToSubmit
@@ -264,7 +278,7 @@ export default function AttendeePage() {
     try {
       const saveResult = await submitCompletedEntry(
         event.eventId,
-        user.uid,
+        entry.id,
         markedSquareIds,
       );
 

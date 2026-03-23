@@ -9,23 +9,52 @@ service cloud.firestore {
         );
     }
 
-    function isOwner(uid) {
-      return request.auth != null && request.auth.uid == uid;
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    function ownerFieldsValid(uid) {
-      return request.resource.data.ownerUid == uid
-        && request.resource.data.eventId == resource.data.eventId
-        && request.resource.data.ownerUid == resource.data.ownerUid
+    function attendeeFieldsValid(entryId) {
+      return request.resource.data.eventId == resource.data.eventId
         && request.resource.data.emailKey == resource.data.emailKey
+        && request.resource.data.normalizedEmail == resource.data.normalizedEmail
         && request.resource.data.name == resource.data.name
         && request.resource.data.company == resource.data.company
         && request.resource.data.email == resource.data.email
-        && request.resource.data.normalizedEmail == resource.data.normalizedEmail
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.winnerLocked == resource.data.winnerLocked
         && request.resource.data.winnerLockedAt == resource.data.winnerLockedAt
-        && request.resource.data.winnerLockedBy == resource.data.winnerLockedBy;
+        && request.resource.data.winnerLockedBy == resource.data.winnerLockedBy
+        && request.resource.data.emailKey == entryId
+        && request.resource.data.normalizedEmail == entryId;
+    }
+
+    function attendeeCreateValid(entryId, eventId) {
+      return isSignedIn()
+        && request.resource.data.eventId == eventId
+        && request.resource.data.emailKey == entryId
+        && request.resource.data.normalizedEmail == entryId
+        && request.resource.data.name is string
+        && request.resource.data.company is string
+        && request.resource.data.email is string
+        && request.resource.data.selectedSquares is list
+        && request.resource.data.markedSquareIds is list
+        && request.resource.data.createdAt != null
+        && request.resource.data.updatedAt != null
+        && request.resource.data.completed == false
+        && request.resource.data.completedAt == null
+        && request.resource.data.prizeEntryEligible == false
+        && request.resource.data.winnerLocked == false
+        && request.resource.data.winnerLockedAt == null
+        && request.resource.data.winnerLockedBy == "";
+    }
+
+    function migrationEntryExists(eventId, emailKey) {
+      return getAfter(
+        /databases/$(database)/documents/events/$(eventId)/entries/$(emailKey)
+      ).data.emailKey == emailKey
+        && getAfter(
+          /databases/$(database)/documents/events/$(eventId)/entries/$(emailKey)
+        ).data.normalizedEmail == emailKey;
     }
 
     match /events/{eventId} {
@@ -33,29 +62,15 @@ service cloud.firestore {
       allow update: if isCapmaAdmin();
       allow create, delete: if false;
 
-      match /entries/{uid} {
-        allow get: if isCapmaAdmin() || isOwner(uid);
+      match /entries/{entryId} {
+        allow get: if isCapmaAdmin() || isSignedIn();
         allow list: if isCapmaAdmin();
-        allow create: if isCapmaAdmin()
-          || (
-            isOwner(uid)
-            && request.resource.data.ownerUid == uid
-            && request.resource.data.eventId == eventId
-            && request.resource.data.emailKey is string
-            && request.resource.data.name is string
-            && request.resource.data.company is string
-            && request.resource.data.selectedSquares is list
-            && request.resource.data.createdAt != null
-            && request.resource.data.updatedAt != null
-            && request.resource.data.winnerLocked == false
-            && request.resource.data.winnerLockedAt == null
-            && request.resource.data.winnerLockedBy == ""
-          );
+        allow create: if isCapmaAdmin() || attendeeCreateValid(entryId, eventId);
         allow update: if isCapmaAdmin()
           || (
-            isOwner(uid)
+            isSignedIn()
             && !resource.data.completed
-            && ownerFieldsValid(uid)
+            && attendeeFieldsValid(entryId)
             && request.resource.data.selectedSquares is list
             && request.resource.data.markedSquareIds is list
             && request.resource.data.completed is bool
@@ -66,15 +81,10 @@ service cloud.firestore {
       }
 
       match /emailIndex/{emailKey} {
-        allow get: if request.auth != null;
+        allow get: if isSignedIn();
         allow list: if isCapmaAdmin();
-        allow create: if isCapmaAdmin()
-          || (
-            request.auth != null
-            && request.resource.data.ownerUid == request.auth.uid
-            && !exists(/databases/$(database)/documents/events/$(eventId)/emailIndex/$(emailKey))
-          );
-        allow update, delete: if isCapmaAdmin();
+        allow create, update: if isCapmaAdmin();
+        allow delete: if isCapmaAdmin() || (isSignedIn() && migrationEntryExists(eventId, emailKey));
       }
     }
 
