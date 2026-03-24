@@ -22,20 +22,20 @@ import { launchCompletionConfetti } from "../lib/celebration";
 type AppView = "entry" | "onboarding" | "board" | "completed";
 const capmaLogoSrc = "/capma-logo.png";
 
-function getOnboardingStorageKey(eventId: string) {
-  return `capma-bingo-onboarding-seen:${eventId}`;
+function getOnboardingStorageKey(eventId: string, email: string) {
+  return `capma-bingo-onboarding-seen:${eventId}:${email.trim().toLowerCase()}`;
 }
 
 function getEntryEmailStorageKey(eventId: string) {
   return `capma-bingo-entry-email:${eventId}`;
 }
 
-function hasSeenOnboarding(eventId: string) {
-  return window.localStorage.getItem(getOnboardingStorageKey(eventId)) === "true";
+function hasSeenOnboarding(eventId: string, email: string) {
+  return window.localStorage.getItem(getOnboardingStorageKey(eventId, email)) === "true";
 }
 
-function markOnboardingSeen(eventId: string) {
-  window.localStorage.setItem(getOnboardingStorageKey(eventId), "true");
+function markOnboardingSeen(eventId: string, email: string) {
+  window.localStorage.setItem(getOnboardingStorageKey(eventId, email), "true");
 }
 
 function getStoredEntryEmail(eventId: string) {
@@ -190,7 +190,7 @@ export default function AttendeePage() {
       setView(
         loadedEntry.completed
           ? "completed"
-          : hasSeenOnboarding(event.eventId)
+          : hasSeenOnboarding(event.eventId, loadedEntry.emailKey)
             ? "board"
             : "onboarding",
       );
@@ -210,7 +210,11 @@ export default function AttendeePage() {
       return;
     }
 
-    markOnboardingSeen(event.eventId);
+    if (!entry) {
+      return;
+    }
+
+    markOnboardingSeen(event.eventId, entry.emailKey);
     setView(entry?.completed ? "completed" : "board");
   }
 
