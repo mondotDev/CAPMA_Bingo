@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import type { EventSquare } from "../features/event/event.types";
 import { launchSquarePoof } from "../lib/celebration";
 
@@ -11,6 +11,7 @@ type BingoBoardProps = {
   markedSquareIds: string[];
   onSubmitCompletedBoard: () => Promise<void>;
   onToggleSquare: (square: EventSquare) => Promise<void>;
+  restoreMessage?: string | null;
   squares: EventSquare[];
 };
 
@@ -29,19 +30,38 @@ export default function BingoBoard({
   markedSquareIds,
   onSubmitCompletedBoard,
   onToggleSquare,
+  restoreMessage,
   squares,
 }: BingoBoardProps) {
+  const detailTitleId = useId();
   const [expandedSquare, setExpandedSquare] = useState<EventSquare | null>(null);
   const [expandedSquareMotion, setExpandedSquareMotion] = useState<ExpandedSquareMotion | null>(
     null,
   );
   const [isExpandedSquareFlipped, setIsExpandedSquareFlipped] = useState(false);
   const [isExpandedSquareVisible, setIsExpandedSquareVisible] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const expandedSquareSelected = expandedSquare
     ? markedSquareIds.includes(expandedSquare.id)
     : false;
+  const progressCount = markedSquareIds.length;
+  const progressPercent = squares.length > 0 ? Math.round((progressCount / squares.length) * 100) : 0;
   const closeTimeoutRef = useRef<number | null>(null);
   const flipTimeoutRef = useRef<number | null>(null);
+  const expandedActionButtonRef = useRef<HTMLButtonElement | null>(null);
+  const lastTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const syncPreference = () => setPrefersReducedMotion(mediaQuery.matches);
+
+    syncPreference();
+    mediaQuery.addEventListener("change", syncPreference);
+
+    return () => {
+      mediaQuery.removeEventListener("change", syncPreference);
+    };
+  }, []);
 
   useEffect(() => {
     if (!expandedSquare) {
@@ -50,7 +70,7 @@ export default function BingoBoard({
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setExpandedSquare(null);
+        requestCloseExpandedSquare();
       }
     }
 
@@ -63,6 +83,12 @@ export default function BingoBoard({
 
   useEffect(() => {
     if (!expandedSquare) {
+      return;
+    }
+
+    if (prefersReducedMotion) {
+      setIsExpandedSquareVisible(true);
+      setIsExpandedSquareFlipped(true);
       return;
     }
 
@@ -81,7 +107,21 @@ export default function BingoBoard({
         flipTimeoutRef.current = null;
       }
     };
-  }, [expandedSquare]);
+  }, [expandedSquare, prefersReducedMotion]);
+
+  useEffect(() => {
+    if (!expandedSquare) {
+      return;
+    }
+
+    const focusTimer = window.setTimeout(() => {
+      expandedActionButtonRef.current?.focus();
+    }, prefersReducedMotion ? 0 : 120);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+    };
+  }, [expandedSquare, prefersReducedMotion]);
 
   useEffect(() => {
     return () => {
@@ -106,9 +146,17 @@ export default function BingoBoard({
 
     setIsExpandedSquareVisible(false);
     setIsExpandedSquareFlipped(false);
+    if (prefersReducedMotion) {
+      setExpandedSquare(null);
+      setExpandedSquareMotion(null);
+      lastTriggerRef.current?.focus();
+      return;
+    }
+
     closeTimeoutRef.current = window.setTimeout(() => {
       setExpandedSquare(null);
       setExpandedSquareMotion(null);
+      lastTriggerRef.current?.focus();
       closeTimeoutRef.current = null;
     }, 220);
   }
@@ -119,6 +167,7 @@ export default function BingoBoard({
       window.clearTimeout(closeTimeoutRef.current);
       closeTimeoutRef.current = null;
     }
+    lastTriggerRef.current = event.currentTarget;
 
     const rect = event.currentTarget.getBoundingClientRect();
     const targetWidth = Math.min(window.innerWidth - 40, 352);
@@ -158,6 +207,26 @@ export default function BingoBoard({
         <p className="board-subtitle">
           Tap a square to take a closer look, then enter the drawing when your board is full.
         </p>
+        {restoreMessage ? (
+          <p className="status-note board-return-note">{restoreMessage}</p>
+        ) : null}
+        <div className="board-progress">
+          <div className="board-progress-copy">
+            <p className="eyebrow">Progress</p>
+            <p className="board-progress-value">
+              {progressCount} of {squares.length} complete
+            </p>
+          </div>
+          <div
+            aria-hidden="true"
+            className="board-progress-bar"
+          >
+            <span
+              className="board-progress-fill"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        </div>
         <p className="status-note">
           {isLocked
             ? "Your board is complete and now locked."
@@ -217,11 +286,11 @@ export default function BingoBoard({
 
       {expandedSquare ? (
         <div
-          aria-hidden="true"
           className="board-square-overlay"
           onClick={requestCloseExpandedSquare}
         >
           <div
+            aria-labelledby={detailTitleId}
             aria-modal="true"
             className="board-square-modal"
             onClick={(event) => event.stopPropagation()}
@@ -244,7 +313,7 @@ export default function BingoBoard({
                       "--board-origin-scale": expandedSquareMotion.scale,
                       "--board-origin-x": `${expandedSquareMotion.translateX}px`,
                       "--board-origin-y": `${expandedSquareMotion.translateY}px`,
-                    } as React.CSSProperties)
+                    } as CSSProperties)
                   : undefined
               }
               type="button"
@@ -263,7 +332,7 @@ export default function BingoBoard({
                 <span className="board-square board-square-modal-face board-square-modal-back">
                   <span className="board-square-back-header">
                     <span className="eyebrow">Square Detail</span>
-                    <span className="board-square-back-title">
+                    <span className="board-square-back-title" id={detailTitleId}>
                       {expandedSquare.labelLine1}
                       <br />
                       {expandedSquare.labelLine2}
@@ -277,6 +346,7 @@ export default function BingoBoard({
 
                   <div className="board-square-back-actions">
                     <button
+                      ref={expandedActionButtonRef}
                       className="button-primary board-square-action-button"
                       disabled={isLocked || isSaving}
                       onClick={(event) => {

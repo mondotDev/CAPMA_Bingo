@@ -143,6 +143,23 @@
     gap: 0.8rem;
   }
 
+  .admin-board-guidance {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.85rem 0.95rem;
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 12%, transparent);
+    background: color-mix(in srgb, var(--color-background) 88%, white);
+  }
+
+  .admin-board-guidance-warning {
+    color: #9a3412;
+  }
+
+  .admin-board-guidance-success {
+    color: var(--color-secondary);
+  }
+
   .admin-square-card {
     display: grid;
     align-content: start;
@@ -289,6 +306,66 @@
     padding: 1rem;
   }
 
+  .completion-layout {
+    display: grid;
+    gap: 1rem;
+    text-align: center;
+  }
+
+  .completion-hero {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .completion-highlight {
+    display: grid;
+    gap: 0.9rem;
+    justify-items: center;
+    border-radius: 1.4rem;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 34%, transparent);
+    background:
+      radial-gradient(circle at top, color-mix(in srgb, var(--color-accent) 18%, transparent), transparent 55%),
+      linear-gradient(180deg, color-mix(in srgb, var(--color-background) 86%, white), color-mix(in srgb, var(--color-secondary) 10%, var(--color-background)));
+    padding: 1.2rem 1rem;
+    box-shadow:
+      0 16px 34px color-mix(in srgb, var(--color-primary) 10%, transparent),
+      inset 0 1px 0 color-mix(in srgb, white 58%, transparent);
+  }
+
+  .completion-highlight-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 5.5rem;
+    min-height: 5.5rem;
+    padding: 0.75rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 72%, white));
+    color: color-mix(in srgb, var(--color-primary) 88%, #6b4f00);
+    font-family: var(--font-heading);
+    font-size: 1.1rem;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow:
+      0 14px 26px color-mix(in srgb, var(--color-accent) 24%, transparent),
+      inset 0 1px 0 color-mix(in srgb, white 62%, transparent);
+  }
+
+  .completion-highlight-copy {
+    display: grid;
+    gap: 0.4rem;
+    justify-items: center;
+  }
+
+  .completion-highlight-title {
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--color-primary);
+  }
+
   .attendee-brand-header {
     display: flex;
     justify-content: center;
@@ -359,6 +436,54 @@
     font-size: 0.93rem;
     line-height: 1.4;
     color: color-mix(in srgb, var(--color-text) 90%, var(--color-primary));
+  }
+
+  .board-return-note {
+    padding: 0.75rem 0.9rem;
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--color-secondary) 10%, var(--color-background));
+    border: 1px solid color-mix(in srgb, var(--color-secondary) 14%, transparent);
+  }
+
+  .board-progress {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.7rem 0.8rem;
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--color-background) 88%, white);
+    border: 1px solid color-mix(in srgb, var(--color-primary) 10%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, white 55%, transparent);
+  }
+
+  .board-progress-copy {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .board-progress-value {
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--color-primary);
+  }
+
+  .board-progress-bar {
+    width: 100%;
+    height: 0.55rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-primary) 10%, var(--color-background));
+  }
+
+  .board-progress-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(135deg, var(--color-secondary), var(--color-primary));
+    transition: width 220ms ease;
   }
 
   .board-grid {
@@ -581,12 +706,33 @@
     max-width: 13rem;
   }
 
+  .board-square-action-button:focus-visible,
+  .board-square-modal-card:focus-visible,
+  .board-square-close:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--color-accent) 55%, white);
+    outline-offset: 3px;
+  }
+
   .board-square-face-hint {
     text-align: center;
   }
 
   .board-square-close {
     color: var(--color-background);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .board-progress-fill,
+    .board-square,
+    .board-square-modal-card,
+    .board-square-modal-rotator,
+    .button-primary {
+      transition: none;
+    }
+
+    .board-square-overlay {
+      backdrop-filter: none;
+    }
   }
 
   .admin-shell {

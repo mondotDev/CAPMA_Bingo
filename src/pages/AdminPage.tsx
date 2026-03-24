@@ -75,6 +75,14 @@ function normalizeSquareInput(value: string) {
   return value.toUpperCase();
 }
 
+function getSquareSignature(square: EventSquare) {
+  return [
+    square.labelLine1.trim(),
+    square.labelLine2.trim(),
+    square.labelLine3?.trim() ?? "",
+  ].join("|");
+}
+
 function AdminSection({
   children,
   className,
@@ -133,6 +141,7 @@ export default function AdminPage() {
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
   const [squareError, setSquareError] = useState<string | null>(null);
   const [savingSquares, setSavingSquares] = useState(false);
+  const [savedSquareSignatures, setSavedSquareSignatures] = useState<string[]>([]);
   const [collapsedSections, setCollapsedSections] = useState<Record<AdminSectionKey, boolean>>({
     boardSetup: true,
     prizeDrawing: true,
@@ -162,6 +171,7 @@ export default function AdminPage() {
         setEventId(activeEvent.eventId);
         setEventName(activeEvent.name);
         setEventSquares(activeEvent.squares);
+        setSavedSquareSignatures(activeEvent.squares.map(getSquareSignature));
         setEntries(activeEntries);
       } catch (loadError) {
         if (!cancelled) {
@@ -213,6 +223,42 @@ export default function AdminPage() {
     return winnerResults.filter((winner) => !winner.winnerLocked);
   }, [winnerResults]);
 
+  const squareGuidance = useMemo(() => {
+    const duplicateIndexes = new Map<string, number[]>();
+    const longLineIndexes: number[] = [];
+    const longDetailIndexes: number[] = [];
+
+    eventSquares.forEach((square, index) => {
+      const signature = getSquareSignature(square);
+      const hasRequiredLines = square.labelLine1.trim() && square.labelLine2.trim();
+
+      if (hasRequiredLines) {
+        const existingIndexes = duplicateIndexes.get(signature) ?? [];
+        existingIndexes.push(index + 1);
+        duplicateIndexes.set(signature, existingIndexes);
+      }
+
+      if (square.labelLine1.trim().length > 18 || square.labelLine2.trim().length > 18) {
+        longLineIndexes.push(index + 1);
+      }
+
+      if ((square.labelLine3?.trim().length ?? 0) > 52) {
+        longDetailIndexes.push(index + 1);
+      }
+    });
+
+    const duplicateGroups = Array.from(duplicateIndexes.values()).filter((indexes) => indexes.length > 1);
+
+    return {
+      duplicateGroups,
+      hasUnsavedChanges:
+        eventSquares.length > 0
+        && eventSquares.map(getSquareSignature).join("||") !== savedSquareSignatures.join("||"),
+      longDetailIndexes,
+      longLineIndexes,
+    };
+  }, [eventSquares, savedSquareSignatures]);
+
   function toggleSection(section: AdminSectionKey) {
     setCollapsedSections((currentSections) => ({
       ...currentSections,
@@ -253,16 +299,19 @@ export default function AdminPage() {
 
     try {
       await updateActiveEventSquares(eventId, eventSquares);
-      setEventSquares((currentSquares) =>
-        currentSquares.map((square, index) => ({
+      setEventSquares((currentSquares) => {
+        const nextSquares = currentSquares.map((square, index) => ({
           ...square,
           id: square.id.trim() || `square-${String(index + 1).padStart(2, "0")}`,
           labelLine1: square.labelLine1.trim(),
           labelLine2: square.labelLine2.trim(),
           labelLine3: square.labelLine3?.trim() ?? "",
           order: index + 1,
-        })),
-      );
+        }));
+
+        setSavedSquareSignatures(nextSquares.map(getSquareSignature));
+        return nextSquares;
+      });
       setActionMessage("Board tiles updated.");
     } catch (saveError) {
       setSquareError(
@@ -518,12 +567,44 @@ export default function AdminPage() {
 
         <AdminSection
           className="admin-drawing-card"
-          description="Edit the attendee board as a fixed 4x4 grid. Line 1 and line 2 are required now, and line 3 is optional for a future sprint."
+          description="Edit the attendee board as a fixed 4x4 grid. Line 1 and line 2 appear on the front of the square, and line 3 shows on the back of the flip card."
           eyebrow="Board Setup"
           isCollapsed={collapsedSections.boardSetup}
           onToggle={() => toggleSection("boardSetup")}
           title="Active Event Tiles"
         >
+          <div className="admin-board-guidance">
+            <p className="status-note">
+              Line 3 is the detail copy attendees see after the square zooms and flips open.
+            </p>
+            {squareGuidance.hasUnsavedChanges ? (
+              <p className="status-note admin-board-guidance-warning">
+                You have unsaved board edits.
+              </p>
+            ) : (
+              <p className="status-note admin-board-guidance-success">
+                Tile content is in sync with the latest save.
+              </p>
+            )}
+            {squareGuidance.duplicateGroups.length > 0 ? (
+              <p className="status-message">
+                Duplicate tile copy detected in tiles {squareGuidance.duplicateGroups
+                  .map((indexes) => indexes.join(", "))
+                  .join(" and ")}.
+              </p>
+            ) : null}
+            {squareGuidance.longLineIndexes.length > 0 ? (
+              <p className="status-note">
+                Front-of-card copy may wrap tightly in tiles {squareGuidance.longLineIndexes.join(", ")}.
+              </p>
+            ) : null}
+            {squareGuidance.longDetailIndexes.length > 0 ? (
+              <p className="status-note">
+                Back-of-card detail is getting long in tiles {squareGuidance.longDetailIndexes.join(", ")}.
+              </p>
+            ) : null}
+          </div>
+
           <div className="admin-square-grid">
             {eventSquares.map((square, index) => (
               <article className="admin-square-card" key={square.id || `square-${index + 1}`}>

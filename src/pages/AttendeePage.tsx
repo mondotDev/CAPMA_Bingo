@@ -81,6 +81,7 @@ export default function AttendeePage() {
   const [entrySubmitting, setEntrySubmitting] = useState(false);
   const [boardSaving, setBoardSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
   const completionCelebratedRef = useRef(false);
   const initializedRef = useRef(false);
 
@@ -100,6 +101,7 @@ export default function AttendeePage() {
     async function initialize() {
       setLoading(true);
       setError(null);
+      setRestoreMessage(null);
 
       try {
         const activeEvent = await loadActiveEvent();
@@ -120,6 +122,11 @@ export default function AttendeePage() {
             if (!cancelled && storedEntry?.eventId === activeEvent.eventId) {
               setEntry(storedEntry);
               setMarkedSquareIds(storedEntry.markedSquareIds);
+              setRestoreMessage(
+                storedEntry.completed
+                  ? "Welcome back. Your completed board is ready and your entry is already in."
+                  : "Welcome back. We found your board and saved your progress.",
+              );
               completionCelebratedRef.current = storedEntry.completed;
               setView(storedEntry.completed ? "completed" : "board");
               return;
@@ -180,6 +187,7 @@ export default function AttendeePage() {
 
     setEntrySubmitting(true);
     setError(null);
+    setRestoreMessage(null);
 
     try {
       const loadedEntry = await createOrLoadEntry(event.eventId, values);
@@ -400,6 +408,7 @@ export default function AttendeePage() {
             markedSquareIds={markedSquareIds}
             onSubmitCompletedBoard={handleSubmitCompletedBoard}
             onToggleSquare={handleSquareToggle}
+            restoreMessage={restoreMessage}
             squares={orderedSquares}
           />
         ) : null}
