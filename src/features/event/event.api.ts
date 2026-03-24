@@ -191,9 +191,9 @@ export async function updateActiveEventSquares(eventId: string, squares: EventSq
   }
 
   const nextSquares = squares.map((square, index) => {
-    const labelLine1 = square.labelLine1.trim();
-    const labelLine2 = square.labelLine2.trim();
-    const labelLine3 = square.labelLine3?.trim() ?? "";
+    const labelLine1 = square.labelLine1.trim().toUpperCase();
+    const labelLine2 = square.labelLine2.trim().toUpperCase();
+    const labelLine3 = square.labelLine3?.trim().toUpperCase() ?? "";
 
     if (!labelLine1 || !labelLine2) {
       throw new Error("Every tile needs both line 1 and line 2 before saving.");
