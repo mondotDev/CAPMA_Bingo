@@ -71,6 +71,10 @@ function shuffleEntries(entries: EntryRecord[]) {
   return shuffledEntries;
 }
 
+function normalizeSquareInput(value: string) {
+  return value.toUpperCase();
+}
+
 function AdminSection({
   children,
   className,
@@ -221,12 +225,14 @@ export default function AdminPage() {
     field: "labelLine1" | "labelLine2" | "labelLine3",
     value: string,
   ) {
+    const normalizedValue = normalizeSquareInput(value);
+
     setEventSquares((currentSquares) =>
       currentSquares.map((square, squareIndex) =>
         squareIndex === index
           ? {
               ...square,
-              [field]: value,
+              [field]: normalizedValue,
             }
           : square,
       ),

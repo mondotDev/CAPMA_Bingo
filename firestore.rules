@@ -13,6 +13,75 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function entryKeysAllowed(data) {
+      return data.keys().hasOnly([
+        "eventId",
+        "ownerUid",
+        "emailKey",
+        "name",
+        "company",
+        "email",
+        "normalizedEmail",
+        "selectedSquares",
+        "markedSquareIds",
+        "completed",
+        "completedAt",
+        "prizeEntryEligible",
+        "createdAt",
+        "updatedAt",
+        "winnerLocked",
+        "winnerLockedAt",
+        "winnerLockedBy",
+      ]);
+    }
+
+    function optionalStringFieldValid(data, fieldName) {
+      return !(fieldName in data) || data[fieldName] is string;
+    }
+
+    function entryShapeValid(data, entryId, eventId) {
+      return entryKeysAllowed(data)
+        && data.eventId == eventId
+        && data.emailKey == entryId
+        && data.normalizedEmail == entryId
+        && data.name is string
+        && data.company is string
+        && data.email is string
+        && data.selectedSquares is list
+        && data.markedSquareIds is list
+        && data.completed is bool
+        && data.prizeEntryEligible is bool
+        && data.winnerLocked is bool
+        && data.winnerLockedBy is string
+        && optionalStringFieldValid(data, "ownerUid")
+        && data.createdAt != null
+        && data.updatedAt != null;
+    }
+
+    function completionLifecycleValid(data) {
+      return (
+        !data.completed
+        && data.completedAt == null
+        && data.prizeEntryEligible == false
+      ) || (
+        data.completed
+        && data.completedAt != null
+        && data.prizeEntryEligible == true
+      );
+    }
+
+    function winnerLifecycleValid(data) {
+      return (
+        !data.winnerLocked
+        && data.winnerLockedAt == null
+        && data.winnerLockedBy == ""
+      ) || (
+        data.winnerLocked
+        && data.winnerLockedAt != null
+        && data.winnerLockedBy is string
+      );
+    }
+
     function attendeeFieldsValid(entryId) {
       return request.resource.data.eventId == resource.data.eventId
         && request.resource.data.emailKey == resource.data.emailKey
@@ -24,22 +93,24 @@ service cloud.firestore {
         && request.resource.data.winnerLocked == resource.data.winnerLocked
         && request.resource.data.winnerLockedAt == resource.data.winnerLockedAt
         && request.resource.data.winnerLockedBy == resource.data.winnerLockedBy
+        && (!("ownerUid" in resource.data) || request.resource.data.ownerUid == resource.data.ownerUid)
         && request.resource.data.emailKey == entryId
-        && request.resource.data.normalizedEmail == entryId;
+        && request.resource.data.normalizedEmail == entryId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "selectedSquares",
+          "markedSquareIds",
+          "completed",
+          "completedAt",
+          "prizeEntryEligible",
+          "updatedAt",
+        ]);
     }
 
     function attendeeCreateValid(entryId, eventId) {
       return isSignedIn()
-        && request.resource.data.eventId == eventId
-        && request.resource.data.emailKey == entryId
-        && request.resource.data.normalizedEmail == entryId
-        && request.resource.data.name is string
-        && request.resource.data.company is string
-        && request.resource.data.email is string
-        && request.resource.data.selectedSquares is list
-        && request.resource.data.markedSquareIds is list
-        && request.resource.data.createdAt != null
-        && request.resource.data.updatedAt != null
+        && entryShapeValid(request.resource.data, entryId, eventId)
+        && completionLifecycleValid(request.resource.data)
+        && request.resource.data.selectedSquares == request.resource.data.markedSquareIds
         && request.resource.data.completed == false
         && request.resource.data.completedAt == null
         && request.resource.data.prizeEntryEligible == false
@@ -57,9 +128,19 @@ service cloud.firestore {
         ).data.normalizedEmail == emailKey;
     }
 
+    function eventUpdateValid() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "boardSize",
+          "squares",
+        ])
+        && request.resource.data.boardSize == 4
+        && request.resource.data.squares is list
+        && request.resource.data.squares.size() == 16;
+    }
+
     match /events/{eventId} {
       allow read: if true;
-      allow update: if isCapmaAdmin();
+      allow update: if isCapmaAdmin() && eventUpdateValid();
       allow create, delete: if false;
 
       match /entries/{entryId} {
@@ -70,12 +151,10 @@ service cloud.firestore {
           || (
             isSignedIn()
             && !resource.data.completed
+            && entryShapeValid(request.resource.data, entryId, eventId)
+            && completionLifecycleValid(request.resource.data)
+            && winnerLifecycleValid(request.resource.data)
             && attendeeFieldsValid(entryId)
-            && request.resource.data.selectedSquares is list
-            && request.resource.data.markedSquareIds is list
-            && request.resource.data.completed is bool
-            && request.resource.data.prizeEntryEligible is bool
-            && request.resource.data.updatedAt != null
           );
         allow delete: if isCapmaAdmin();
       }
