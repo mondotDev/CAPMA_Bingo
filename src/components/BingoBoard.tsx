@@ -135,7 +135,7 @@ export default function BingoBoard({
     };
   }, []);
 
-  function requestCloseExpandedSquare() {
+  function requestCloseExpandedSquare(options?: { preserveFlipState?: boolean }) {
     if (!expandedSquare) {
       return;
     }
@@ -145,10 +145,13 @@ export default function BingoBoard({
     }
 
     setIsExpandedSquareVisible(false);
-    setIsExpandedSquareFlipped(false);
+    if (!options?.preserveFlipState) {
+      setIsExpandedSquareFlipped(false);
+    }
     if (prefersReducedMotion) {
       setExpandedSquare(null);
       setExpandedSquareMotion(null);
+      setIsExpandedSquareFlipped(false);
       lastTriggerRef.current?.focus();
       return;
     }
@@ -156,6 +159,7 @@ export default function BingoBoard({
     closeTimeoutRef.current = window.setTimeout(() => {
       setExpandedSquare(null);
       setExpandedSquareMotion(null);
+      setIsExpandedSquareFlipped(false);
       lastTriggerRef.current?.focus();
       closeTimeoutRef.current = null;
     }, 220);
@@ -197,7 +201,7 @@ export default function BingoBoard({
     }
 
     await onToggleSquare(expandedSquare);
-    requestCloseExpandedSquare();
+    requestCloseExpandedSquare({ preserveFlipState: true });
   }
 
   return (
@@ -287,7 +291,7 @@ export default function BingoBoard({
       {expandedSquare ? (
         <div
           className="board-square-overlay"
-          onClick={requestCloseExpandedSquare}
+          onClick={() => requestCloseExpandedSquare()}
         >
           <div
             aria-labelledby={detailTitleId}
@@ -373,7 +377,7 @@ export default function BingoBoard({
 
             <button
               className="admin-link-button board-square-close"
-              onClick={requestCloseExpandedSquare}
+              onClick={() => requestCloseExpandedSquare()}
               type="button"
             >
               Close
