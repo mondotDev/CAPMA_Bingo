@@ -521,40 +521,64 @@ export default function AdminPage() {
           <div className="admin-square-grid">
             {eventSquares.map((square, index) => (
               <article className="admin-square-card" key={square.id || `square-${index + 1}`}>
-                <p className="eyebrow">Tile {index + 1}</p>
+                <div className="admin-square-card-header">
+                  <p className="eyebrow">Tile {index + 1}</p>
+                  <span className="admin-square-index">{String(index + 1).padStart(2, "0")}</span>
+                </div>
+                <div className="admin-square-preview">
+                  <div className="admin-square-preview-label">
+                    <span className="admin-square-preview-line">
+                      {square.labelLine1.trim() || "Line 1"}
+                    </span>
+                    <span className="admin-square-preview-line">
+                      {square.labelLine2.trim() || "Line 2"}
+                    </span>
+                    {square.labelLine3?.trim() ? (
+                      <span className="admin-square-preview-line admin-square-preview-line-optional">
+                        {square.labelLine3.trim()}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
                 <div className="admin-square-fields">
                   <label className="field-group">
-                    <span className="field-label">Line 1</span>
+                    <span className="field-label">1</span>
                     <input
-                      className="field-input"
+                      className="field-input admin-square-input"
+                      maxLength={40}
                       onChange={(event) =>
                         handleSquareValueChange(index, "labelLine1", event.target.value)
                       }
+                      placeholder="Top line"
                       type="text"
                       value={square.labelLine1}
                     />
                   </label>
 
                   <label className="field-group">
-                    <span className="field-label">Line 2</span>
+                    <span className="field-label">2</span>
                     <input
-                      className="field-input"
+                      className="field-input admin-square-input"
+                      maxLength={40}
                       onChange={(event) =>
                         handleSquareValueChange(index, "labelLine2", event.target.value)
                       }
+                      placeholder="Second line"
                       type="text"
                       value={square.labelLine2}
                     />
                   </label>
 
                   <label className="field-group">
-                    <span className="field-label">Line 3</span>
+                    <span className="field-label">3</span>
                     <textarea
-                      className="field-input admin-square-textarea"
+                      className="field-input admin-square-input admin-square-textarea"
+                      maxLength={60}
                       onChange={(event) =>
                         handleSquareValueChange(index, "labelLine3", event.target.value)
                       }
-                      rows={3}
+                      placeholder="Optional"
+                      rows={2}
                       value={square.labelLine3 ?? ""}
                     />
                   </label>
