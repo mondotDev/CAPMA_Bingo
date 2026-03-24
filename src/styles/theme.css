@@ -437,6 +437,38 @@
     gap: 1rem;
   }
 
+  .admin-section-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  .admin-section-toggle {
+    align-self: flex-start;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 16%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-background) 92%, white);
+    color: var(--color-primary);
+    font-family: var(--font-heading);
+    font-size: 0.9rem;
+    font-weight: 700;
+    padding: 0.55rem 0.95rem;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease,
+      transform 140ms ease;
+  }
+
+  .admin-section-toggle:hover {
+    background: color-mix(in srgb, var(--color-secondary) 10%, var(--color-background));
+    border-color: color-mix(in srgb, var(--color-secondary) 26%, transparent);
+  }
+
+  .admin-section-toggle:active {
+    transform: translateY(1px);
+  }
+
   .admin-drawing-controls {
     display: grid;
     gap: 0.85rem;
@@ -679,6 +711,12 @@
     .admin-header {
       flex-direction: row;
       align-items: end;
+      justify-content: space-between;
+    }
+
+    .admin-section-header {
+      flex-direction: row;
+      align-items: start;
       justify-content: space-between;
     }
 

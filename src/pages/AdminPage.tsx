@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   loadActiveEventForAdmin,
@@ -18,6 +18,21 @@ import type {
 } from "../features/entry/entry.types";
 
 type WinnerFilter = "completed" | "all";
+type AdminSectionKey =
+  | "boardSetup"
+  | "prizeDrawing"
+  | "entries"
+  | "editEntry";
+
+type AdminSectionProps = {
+  children: ReactNode;
+  className: string;
+  description?: string;
+  eyebrow: string;
+  isCollapsed: boolean;
+  onToggle: () => void;
+  title: string;
+};
 
 function formatCompletedAt(value: Date | null) {
   if (!value) {
@@ -56,6 +71,38 @@ function shuffleEntries(entries: EntryRecord[]) {
   return shuffledEntries;
 }
 
+function AdminSection({
+  children,
+  className,
+  description,
+  eyebrow,
+  isCollapsed,
+  onToggle,
+  title,
+}: AdminSectionProps) {
+  return (
+    <section className={className}>
+      <div className="admin-section-header">
+        <div className="space-y-2">
+          <p className="eyebrow">{eyebrow}</p>
+          <h2 className="section-title">{title}</h2>
+          {description ? <p className="body-copy">{description}</p> : null}
+        </div>
+        <button
+          aria-expanded={!isCollapsed}
+          className="admin-section-toggle"
+          onClick={onToggle}
+          type="button"
+        >
+          {isCollapsed ? "+" : "-"}
+        </button>
+      </div>
+
+      {!isCollapsed ? children : null}
+    </section>
+  );
+}
+
 export default function AdminPage() {
   const { user } = useAdminAuth();
   const [eventId, setEventId] = useState("");
@@ -82,6 +129,12 @@ export default function AdminPage() {
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
   const [squareError, setSquareError] = useState<string | null>(null);
   const [savingSquares, setSavingSquares] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Record<AdminSectionKey, boolean>>({
+    boardSetup: true,
+    prizeDrawing: true,
+    entries: true,
+    editEntry: true,
+  });
 
   useEffect(() => {
     document.title = eventName ? `CAPMA Bingo | Admin | ${eventName}` : "CAPMA Bingo | Admin";
@@ -155,6 +208,13 @@ export default function AdminPage() {
   const drawnUnlockedWinners = useMemo(() => {
     return winnerResults.filter((winner) => !winner.winnerLocked);
   }, [winnerResults]);
+
+  function toggleSection(section: AdminSectionKey) {
+    setCollapsedSections((currentSections) => ({
+      ...currentSections,
+      [section]: !currentSections[section],
+    }));
+  }
 
   function handleSquareValueChange(
     index: number,
@@ -428,31 +488,36 @@ export default function AdminPage() {
         {error ? <p className="status-message">{error}</p> : null}
         {actionMessage ? <p className="status-note">{actionMessage}</p> : null}
 
-        <section className="admin-summary-grid">
-          <article className="admin-summary-card">
-            <p className="eyebrow">Total Entries</p>
-            <p className="admin-summary-value">{summary.total}</p>
-          </article>
-          <article className="admin-summary-card">
-            <p className="eyebrow">In Progress</p>
-            <p className="admin-summary-value">{summary.inProgress}</p>
-          </article>
-          <article className="admin-summary-card">
-            <p className="eyebrow">Completed</p>
-            <p className="admin-summary-value">{summary.completed}</p>
-          </article>
-        </section>
-
         <section className="admin-drawing-card">
           <div className="space-y-2">
-            <p className="eyebrow">Board Setup</p>
-            <h2 className="section-title">Active Event Tiles</h2>
-            <p className="body-copy">
-              Edit the attendee board as a fixed 4x4 grid. Line 1 and line 2 are
-              required now, and line 3 is optional for a future sprint.
-            </p>
+            <p className="eyebrow">Overview</p>
+            <h2 className="section-title">Entry Summary</h2>
+            <p className="body-copy">Quick counts for the current active event.</p>
           </div>
+          <div className="admin-summary-grid">
+            <article className="admin-summary-card">
+              <p className="eyebrow">Total Entries</p>
+              <p className="admin-summary-value">{summary.total}</p>
+            </article>
+            <article className="admin-summary-card">
+              <p className="eyebrow">In Progress</p>
+              <p className="admin-summary-value">{summary.inProgress}</p>
+            </article>
+            <article className="admin-summary-card">
+              <p className="eyebrow">Completed</p>
+              <p className="admin-summary-value">{summary.completed}</p>
+            </article>
+          </div>
+        </section>
 
+        <AdminSection
+          className="admin-drawing-card"
+          description="Edit the attendee board as a fixed 4x4 grid. Line 1 and line 2 are required now, and line 3 is optional for a future sprint."
+          eyebrow="Board Setup"
+          isCollapsed={collapsedSections.boardSetup}
+          onToggle={() => toggleSection("boardSetup")}
+          title="Active Event Tiles"
+        >
           <div className="admin-square-grid">
             {eventSquares.map((square, index) => (
               <article className="admin-square-card" key={square.id || `square-${index + 1}`}>
@@ -510,18 +575,16 @@ export default function AdminPage() {
               {savingSquares ? "Saving Tiles..." : "Save Tiles"}
             </button>
           </div>
-        </section>
+        </AdminSection>
 
-        <section className="admin-drawing-card">
-          <div className="space-y-2">
-            <p className="eyebrow">Prize Drawing</p>
-            <h2 className="section-title">Random Winner Selection</h2>
-            <p className="body-copy">
-              Draw from all entries or only completed entries. Winners are selected
-              randomly from the current admin dataset. Locked winners are excluded.
-            </p>
-          </div>
-
+        <AdminSection
+          className="admin-drawing-card"
+          description="Draw from all entries or only completed entries. Winners are selected randomly from the current admin dataset. Locked winners are excluded."
+          eyebrow="Prize Drawing"
+          isCollapsed={collapsedSections.prizeDrawing}
+          onToggle={() => toggleSection("prizeDrawing")}
+          title="Random Winner Selection"
+        >
           <div className="admin-drawing-controls">
             <label className="field-group">
               <span className="field-label">Eligible Pool</span>
@@ -605,162 +668,170 @@ export default function AdminPage() {
               </div>
             </div>
           ) : null}
-        </section>
+        </AdminSection>
 
-        <section className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Company</th>
-                <th>Email</th>
-                <th>Selected</th>
-                <th>Status</th>
-                <th>Winner Lock</th>
-                <th>Completed At</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
+        <AdminSection
+          className="admin-drawing-card"
+          description="Review, edit, and delete event entries across desktop and mobile layouts."
+          eyebrow="Entries"
+          isCollapsed={collapsedSections.entries}
+          onToggle={() => toggleSection("entries")}
+          title="Entry Management"
+        >
+          <section className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
                 <tr>
-                  <td className="admin-empty-cell" colSpan={8}>
-                    Loading entries...
-                  </td>
+                  <th>Name</th>
+                  <th>Company</th>
+                  <th>Email</th>
+                  <th>Selected</th>
+                  <th>Status</th>
+                  <th>Winner Lock</th>
+                  <th>Completed At</th>
+                  <th>Actions</th>
                 </tr>
-              ) : entries.length === 0 ? (
-                <tr>
-                  <td className="admin-empty-cell" colSpan={8}>
-                    No entries found for the active event.
-                  </td>
-                </tr>
-              ) : (
-                entries.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{entry.name}</td>
-                    <td>{entry.company}</td>
-                    <td>{entry.email}</td>
-                    <td>{entry.markedSquareIds.length}</td>
-                    <td>
-                      <span
-                        className={
-                          entry.completed
-                            ? "admin-status admin-status-complete"
-                            : "admin-status"
-                        }
-                      >
-                        {entry.completed ? "Completed" : "In Progress"}
-                      </span>
-                    </td>
-                    <td>
-                      <span
-                        className={
-                          entry.winnerLocked
-                            ? "admin-status admin-status-locked"
-                            : "admin-status"
-                        }
-                      >
-                        {entry.winnerLocked ? "Locked" : "Open"}
-                      </span>
-                    </td>
-                    <td>{formatCompletedAt(entry.completedAt)}</td>
-                    <td>
-                      <div className="admin-row-actions">
-                        <button
-                          className="admin-link-button"
-                          onClick={() => handleStartEdit(entry)}
-                          type="button"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="admin-link-button admin-link-button-danger"
-                          disabled={deletingEntryId === entry.id}
-                          onClick={() => void handleDeleteEntry(entry)}
-                          type="button"
-                        >
-                          {deletingEntryId === entry.id ? "Deleting..." : "Delete"}
-                        </button>
-                      </div>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td className="admin-empty-cell" colSpan={8}>
+                      Loading entries...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </section>
+                ) : entries.length === 0 ? (
+                  <tr>
+                    <td className="admin-empty-cell" colSpan={8}>
+                      No entries found for the active event.
+                    </td>
+                  </tr>
+                ) : (
+                  entries.map((entry) => (
+                    <tr key={entry.id}>
+                      <td>{entry.name}</td>
+                      <td>{entry.company}</td>
+                      <td>{entry.email}</td>
+                      <td>{entry.markedSquareIds.length}</td>
+                      <td>
+                        <span
+                          className={
+                            entry.completed
+                              ? "admin-status admin-status-complete"
+                              : "admin-status"
+                          }
+                        >
+                          {entry.completed ? "Completed" : "In Progress"}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={
+                            entry.winnerLocked
+                              ? "admin-status admin-status-locked"
+                              : "admin-status"
+                          }
+                        >
+                          {entry.winnerLocked ? "Locked" : "Open"}
+                        </span>
+                      </td>
+                      <td>{formatCompletedAt(entry.completedAt)}</td>
+                      <td>
+                        <div className="admin-row-actions">
+                          <button
+                            className="admin-link-button"
+                            onClick={() => handleStartEdit(entry)}
+                            type="button"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="admin-link-button admin-link-button-danger"
+                            disabled={deletingEntryId === entry.id}
+                            onClick={() => void handleDeleteEntry(entry)}
+                            type="button"
+                          >
+                            {deletingEntryId === entry.id ? "Deleting..." : "Delete"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </section>
 
-        <section className="admin-cards">
-          {loading ? (
-            <article className="admin-entry-card">
-              <p className="body-copy">Loading entries...</p>
-            </article>
-          ) : entries.length === 0 ? (
-            <article className="admin-entry-card">
-              <p className="body-copy">No entries found for the active event.</p>
-            </article>
-          ) : (
-            entries.map((entry) => (
-              <article className="admin-entry-card" key={`${entry.id}-card`}>
-                <div className="space-y-1">
-                  <h2 className="admin-entry-title">{entry.name}</h2>
-                  <p className="body-copy">{entry.company}</p>
-                  <p className="admin-entry-email">{entry.email}</p>
-                </div>
-                <dl className="admin-entry-metadata">
-                  <div>
-                    <dt>Selected</dt>
-                    <dd>{entry.markedSquareIds.length}</dd>
-                  </div>
-                  <div>
-                    <dt>Status</dt>
-                    <dd>{entry.completed ? "Completed" : "In Progress"}</dd>
-                  </div>
-                  <div>
-                    <dt>Winner Lock</dt>
-                    <dd>
-                      {entry.winnerLocked
-                        ? `Locked${entry.winnerLockedBy ? ` by ${entry.winnerLockedBy}` : ""}`
-                        : "Open"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Completed At</dt>
-                    <dd>{formatCompletedAt(entry.completedAt)}</dd>
-                  </div>
-                </dl>
-                <div className="admin-card-actions">
-                  <button
-                    className="admin-link-button"
-                    onClick={() => handleStartEdit(entry)}
-                    type="button"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="admin-link-button admin-link-button-danger"
-                    disabled={deletingEntryId === entry.id}
-                    onClick={() => void handleDeleteEntry(entry)}
-                    type="button"
-                  >
-                    {deletingEntryId === entry.id ? "Deleting..." : "Delete"}
-                  </button>
-                </div>
+          <section className="admin-cards">
+            {loading ? (
+              <article className="admin-entry-card">
+                <p className="body-copy">Loading entries...</p>
               </article>
-            ))
-          )}
-        </section>
+            ) : entries.length === 0 ? (
+              <article className="admin-entry-card">
+                <p className="body-copy">No entries found for the active event.</p>
+              </article>
+            ) : (
+              entries.map((entry) => (
+                <article className="admin-entry-card" key={`${entry.id}-card`}>
+                  <div className="space-y-1">
+                    <h2 className="admin-entry-title">{entry.name}</h2>
+                    <p className="body-copy">{entry.company}</p>
+                    <p className="admin-entry-email">{entry.email}</p>
+                  </div>
+                  <dl className="admin-entry-metadata">
+                    <div>
+                      <dt>Selected</dt>
+                      <dd>{entry.markedSquareIds.length}</dd>
+                    </div>
+                    <div>
+                      <dt>Status</dt>
+                      <dd>{entry.completed ? "Completed" : "In Progress"}</dd>
+                    </div>
+                    <div>
+                      <dt>Winner Lock</dt>
+                      <dd>
+                        {entry.winnerLocked
+                          ? `Locked${entry.winnerLockedBy ? ` by ${entry.winnerLockedBy}` : ""}`
+                          : "Open"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Completed At</dt>
+                      <dd>{formatCompletedAt(entry.completedAt)}</dd>
+                    </div>
+                  </dl>
+                  <div className="admin-card-actions">
+                    <button
+                      className="admin-link-button"
+                      onClick={() => handleStartEdit(entry)}
+                      type="button"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="admin-link-button admin-link-button-danger"
+                      disabled={deletingEntryId === entry.id}
+                      onClick={() => void handleDeleteEntry(entry)}
+                      type="button"
+                    >
+                      {deletingEntryId === entry.id ? "Deleting..." : "Delete"}
+                    </button>
+                  </div>
+                </article>
+              ))
+            )}
+          </section>
+        </AdminSection>
 
         {editableEntry ? (
-          <section className="admin-edit-card">
-            <div className="space-y-2">
-              <p className="eyebrow">Edit Entry</p>
-              <h2 className="section-title">Update Participant</h2>
-              <p className="body-copy">
-                Update the participant details for this event entry.
-              </p>
-            </div>
-
+          <AdminSection
+            className="admin-edit-card"
+            description="Update the participant details for this event entry."
+            eyebrow="Edit Entry"
+            isCollapsed={collapsedSections.editEntry}
+            onToggle={() => toggleSection("editEntry")}
+            title="Update Participant"
+          >
             <div className="admin-edit-grid">
               <label className="field-group">
                 <span className="field-label">Name</span>
@@ -828,7 +899,7 @@ export default function AdminPage() {
                 Cancel
               </button>
             </div>
-          </section>
+          </AdminSection>
         ) : null}
       </section>
     </main>
