@@ -505,7 +505,7 @@ export default function AdminPage() {
     setError(null);
 
     try {
-      await deleteEntryById(entry.eventId, entry.id, entry.emailKey, entry.ownerUid);
+      await deleteEntryById(entry.eventId, entry.id);
       setEntries((currentEntries) =>
         currentEntries.filter((currentEntry) => currentEntry.id !== entry.id),
       );

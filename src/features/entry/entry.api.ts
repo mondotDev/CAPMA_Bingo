@@ -1,7 +1,6 @@
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
   query,
   runTransaction,
@@ -10,7 +9,7 @@ import {
   Timestamp,
   writeBatch,
 } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { auth, db } from "../../lib/firebase";
 import type {
   AdminEntryUpdateValues,
   EntryFormValues,
@@ -38,20 +37,35 @@ type EntryDocument = {
   winnerLockedBy?: string;
 };
 
-type EmailIndexDocument = {
-  ownerUid?: string;
-};
-
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-function getEntryDocRef(eventId: string, entryId: string) {
-  return doc(db, "events", eventId, "entries", entryId);
+function getEntryDocRef(eventId: string, normalizedEmail: string) {
+  return doc(db, "events", eventId, "entries", normalizedEmail);
 }
 
-function getEmailIndexRef(eventId: string, emailKey: string) {
-  return doc(db, "events", eventId, "emailIndex", emailKey);
+function getCurrentOwnerUid() {
+  const ownerUid = auth.currentUser?.uid;
+
+  if (!ownerUid) {
+    throw new Error("Anonymous sign-in is required before creating a CAPMA Bingo entry.");
+  }
+
+  return ownerUid;
+}
+
+function isFirestorePermissionDenied(error: unknown) {
+  return (
+    typeof error === "object"
+    && error !== null
+    && "code" in error
+    && error.code === "permission-denied"
+  );
+}
+
+function getDuplicateEntryError() {
+  return new Error("That email already has a CAPMA Bingo entry for this event.");
 }
 
 function toDate(value: Timestamp | null | undefined) {
@@ -65,7 +79,7 @@ function mapEntryRecord(id: string, data: EntryDocument): EntryRecord {
       ? data.markedSquareIds
       : [];
   const normalizedEntryEmail = normalizeEmail(
-    data.emailKey ?? data.normalizedEmail ?? data.email ?? id,
+    data.normalizedEmail ?? data.emailKey ?? data.email ?? id,
   );
 
   return {
@@ -100,153 +114,79 @@ function sortEntries(entries: EntryRecord[]) {
   });
 }
 
-function dedupeEntries(entries: EntryRecord[]) {
-  const dedupedEntries = new Map<string, EntryRecord>();
-
-  entries.forEach((entry) => {
-    const dedupeKey = entry.emailKey || normalizeEmail(entry.email || entry.id);
-    const currentEntry = dedupedEntries.get(dedupeKey);
-    const prefersCurrentShape = entry.id === entry.emailKey;
-    const currentIsCurrentShape = currentEntry?.id === currentEntry?.emailKey;
-
-    if (!currentEntry || (!currentIsCurrentShape && prefersCurrentShape)) {
-      dedupedEntries.set(dedupeKey, entry);
-    }
-  });
-
-  return sortEntries(Array.from(dedupedEntries.values()));
-}
-
-async function fetchLegacyOwnerUid(eventId: string, emailKey: string) {
-  const emailIndexSnapshot = await getDoc(getEmailIndexRef(eventId, emailKey));
-
-  if (!emailIndexSnapshot.exists()) {
-    return null;
-  }
-
-  const indexData = emailIndexSnapshot.data() as EmailIndexDocument;
-  return indexData.ownerUid && indexData.ownerUid !== emailKey ? indexData.ownerUid : null;
-}
-
-async function migrateLegacyEntryIfNeeded(
-  eventId: string,
-  emailKey: string,
-  values?: EntryFormValues,
-): Promise<EntryRecord | null> {
-  const legacyOwnerUid = await fetchLegacyOwnerUid(eventId, emailKey);
-
-  if (!legacyOwnerUid) {
-    return null;
-  }
-
-  console.info("[board] legacy load start", { eventId, emailKey, legacyOwnerUid });
-
-  await runTransaction(db, async (transaction) => {
-    const nextEntryRef = getEntryDocRef(eventId, emailKey);
-    const emailIndexRef = getEmailIndexRef(eventId, emailKey);
-    const nextEntrySnapshot = await transaction.get(nextEntryRef);
-
-    if (nextEntrySnapshot.exists()) {
-      transaction.delete(emailIndexRef);
-      return;
-    }
-
-    const legacyEntryRef = getEntryDocRef(eventId, legacyOwnerUid);
-    const legacyEntrySnapshot = await transaction.get(legacyEntryRef);
-
-    if (!legacyEntrySnapshot.exists()) {
-      return;
-    }
-
-    const legacyData = legacyEntrySnapshot.data() as EntryDocument;
-    const migratedPayload: EntryDocument = {
-      ...legacyData,
-      eventId,
-      emailKey,
-      normalizedEmail: emailKey,
-      email: values?.email.trim() ?? legacyData.email ?? emailKey,
-      name: values?.name.trim() || legacyData.name || "",
-      company: values?.company.trim() || legacyData.company || "",
-      updatedAt: serverTimestamp() as never,
-    };
-
-    transaction.set(nextEntryRef, migratedPayload);
-    transaction.delete(emailIndexRef);
-  });
-
-  const migratedSnapshot = await getDoc(getEntryDocRef(eventId, emailKey));
-
-  if (!migratedSnapshot.exists()) {
-    console.info("[board] legacy load success", {
-      eventId,
-      emailKey,
-      source: "legacy-missing",
-    });
-    return null;
-  }
-
-  console.info("[board] legacy load success", {
-    eventId,
-    emailKey,
-    source: "legacy-migrated",
-  });
-  return mapEntryRecord(emailKey, migratedSnapshot.data() as EntryDocument);
-}
-
 async function getEntryByEmailKey(
   eventId: string,
-  emailKey: string,
-  values?: EntryFormValues,
+  normalizedEmail: string,
 ): Promise<EntryRecord | null> {
-  console.info("[board] load start", { eventId, emailKey });
+  console.info("[board] load start", { eventId, normalizedEmail });
 
-  const nextEntryRef = getEntryDocRef(eventId, emailKey);
-  const nextEntrySnapshot = await getDoc(nextEntryRef);
+  try {
+    const entryData = await runTransaction(db, async (transaction) => {
+      const entryRef = getEntryDocRef(eventId, normalizedEmail);
+      const snapshot = await transaction.get(entryRef);
 
-  if (nextEntrySnapshot.exists()) {
-    console.info("[board] load success", { eventId, emailKey, source: "direct" });
-    return mapEntryRecord(emailKey, nextEntrySnapshot.data() as EntryDocument);
+      if (!snapshot.exists()) {
+        return null;
+      }
+
+      return snapshot.data() as EntryDocument;
+    });
+
+    if (!entryData) {
+      console.info("[board] load success", { eventId, normalizedEmail, source: "missing" });
+      return null;
+    }
+
+    console.info("[board] load success", { eventId, normalizedEmail, source: "direct" });
+    return mapEntryRecord(normalizedEmail, entryData);
+  } catch (error) {
+    console.error("[board] load failure", error);
+
+    if (isFirestorePermissionDenied(error)) {
+      throw getDuplicateEntryError();
+    }
+
+    throw error;
   }
-
-  const migratedEntry = await migrateLegacyEntryIfNeeded(eventId, emailKey, values);
-
-  if (migratedEntry) {
-    return migratedEntry;
-  }
-
-  console.info("[board] load success", { eventId, emailKey, source: "missing" });
-  return null;
 }
 
 export async function createOrLoadEntry(
   eventId: string,
   values: EntryFormValues,
 ): Promise<EntryRecord> {
-  const emailKey = normalizeEmail(values.email);
-  const existingEntry = await getEntryByEmailKey(eventId, emailKey, values);
+  const normalizedEmail = normalizeEmail(values.email);
+  const ownerUid = getCurrentOwnerUid();
+  const trimmedEmail = values.email.trim();
+  const trimmedName = values.name.trim();
+  const trimmedCompany = values.company.trim();
+  const existingEntry = await getEntryByEmailKey(eventId, normalizedEmail);
 
   if (existingEntry) {
     return existingEntry;
   }
 
-  const entryRef = getEntryDocRef(eventId, emailKey);
-  const trimmedEmail = values.email.trim();
-  const trimmedName = values.name.trim();
-  const trimmedCompany = values.company.trim();
+  const entryRef = getEntryDocRef(eventId, normalizedEmail);
 
   try {
     await runTransaction(db, async (transaction) => {
       const snapshot = await transaction.get(entryRef);
 
       if (snapshot.exists()) {
-        return;
+        const existingEntryData = snapshot.data() as EntryDocument;
+
+        if (existingEntryData.ownerUid === ownerUid) {
+          return;
+        }
+
+        throw getDuplicateEntryError();
       }
 
       transaction.set(entryRef, {
         eventId,
-        emailKey,
+        ownerUid,
+        emailKey: normalizedEmail,
         email: trimmedEmail,
-        normalizedEmail: emailKey,
+        normalizedEmail,
         name: trimmedName,
         company: trimmedCompany,
         selectedSquares: [],
@@ -262,29 +202,21 @@ export async function createOrLoadEntry(
       });
     });
 
-    console.info("[board] load success", { eventId, emailKey, source: "created" });
-    return {
-      id: emailKey,
-      eventId,
-      ownerUid: "",
-      emailKey,
-      name: trimmedName,
-      company: trimmedCompany,
-      email: trimmedEmail,
-      normalizedEmail: emailKey,
-      selectedSquares: [],
-      markedSquareIds: [],
-      completed: false,
-      completedAt: null,
-      prizeEntryEligible: false,
-      createdAt: null,
-      updatedAt: null,
-      winnerLocked: false,
-      winnerLockedAt: null,
-      winnerLockedBy: "",
-    };
+    const createdOrExistingEntry = await getEntryByEmailKey(eventId, normalizedEmail);
+
+    if (!createdOrExistingEntry) {
+      throw new Error("We could not load your CAPMA Bingo entry.");
+    }
+
+    console.info("[board] load success", { eventId, normalizedEmail, source: "created" });
+    return createdOrExistingEntry;
   } catch (error) {
     console.error("[board] load failure", error);
+
+    if (isFirestorePermissionDenied(error)) {
+      throw getDuplicateEntryError();
+    }
+
     throw error instanceof Error
       ? error
       : new Error("We could not create your CAPMA Bingo entry.");
@@ -295,19 +227,14 @@ export async function getEntryByEmail(
   eventId: string,
   email: string,
 ): Promise<EntryRecord | null> {
-  try {
-    return await getEntryByEmailKey(eventId, normalizeEmail(email));
-  } catch (error) {
-    console.error("[board] load failure", error);
-    throw error;
-  }
+  return getEntryByEmailKey(eventId, normalizeEmail(email));
 }
 
 export async function getEntriesByEventId(eventId: string): Promise<EntryRecord[]> {
   const entriesQuery = query(collection(db, "events", eventId, "entries"));
   const snapshot = await getDocs(entriesQuery);
 
-  return dedupeEntries(
+  return sortEntries(
     snapshot.docs.map((entryDocument) =>
       mapEntryRecord(entryDocument.id, entryDocument.data() as EntryDocument),
     ),
@@ -340,17 +267,9 @@ export async function lockWinners(
 export async function deleteEntryById(
   eventId: string,
   entryId: string,
-  emailKey: string,
-  ownerUid?: string,
 ): Promise<void> {
   const batch = writeBatch(db);
   batch.delete(getEntryDocRef(eventId, entryId));
-  batch.delete(getEmailIndexRef(eventId, emailKey));
-
-  if (ownerUid && ownerUid !== entryId) {
-    batch.delete(getEntryDocRef(eventId, ownerUid));
-  }
-
   await batch.commit();
 }
 
@@ -361,11 +280,9 @@ export async function updateEntryByAdmin(
   const trimmedName = values.name.trim();
   const trimmedCompany = values.company.trim();
   const trimmedEmail = values.email.trim();
-  const nextEmailKey = normalizeEmail(trimmedEmail);
+  const nextNormalizedEmail = normalizeEmail(trimmedEmail);
   const currentEntryRef = getEntryDocRef(entry.eventId, entry.id);
-  const nextEntryRef = getEntryDocRef(entry.eventId, nextEmailKey);
-  const currentEmailIndexRef = getEmailIndexRef(entry.eventId, entry.emailKey);
-  const nextEmailIndexRef = getEmailIndexRef(entry.eventId, nextEmailKey);
+  const nextEntryRef = getEntryDocRef(entry.eventId, nextNormalizedEmail);
 
   await runTransaction(db, async (transaction) => {
     const currentEntrySnapshot = await transaction.get(currentEntryRef);
@@ -382,32 +299,18 @@ export async function updateEntryByAdmin(
       }
     }
 
-    const nextEmailIndexSnapshot = await transaction.get(nextEmailIndexRef);
-
-    if (nextEmailIndexSnapshot.exists()) {
-      const indexData = nextEmailIndexSnapshot.data() as EmailIndexDocument;
-      const matchesCurrentEntry =
-        indexData.ownerUid === entry.id || indexData.ownerUid === entry.ownerUid;
-
-      if (!matchesCurrentEntry) {
-        throw new Error("Another entry already exists for that event and email.");
-      }
-    }
-
     const currentData = currentEntrySnapshot.data() as EntryDocument;
     const nextPayload: EntryDocument = {
       ...currentData,
       name: trimmedName,
       company: trimmedCompany,
       email: trimmedEmail,
-      normalizedEmail: nextEmailKey,
-      emailKey: nextEmailKey,
+      normalizedEmail: nextNormalizedEmail,
+      emailKey: nextNormalizedEmail,
       updatedAt: serverTimestamp() as never,
     };
 
     transaction.set(nextEntryRef, nextPayload);
-    transaction.delete(currentEmailIndexRef);
-    transaction.delete(nextEmailIndexRef);
 
     if (currentEntryRef.path !== nextEntryRef.path) {
       transaction.delete(currentEntryRef);
@@ -416,12 +319,12 @@ export async function updateEntryByAdmin(
 
   return {
     ...entry,
-    id: nextEmailKey,
+    id: nextNormalizedEmail,
     name: trimmedName,
     company: trimmedCompany,
     email: trimmedEmail,
-    normalizedEmail: nextEmailKey,
-    emailKey: nextEmailKey,
+    normalizedEmail: nextNormalizedEmail,
+    emailKey: nextNormalizedEmail,
   };
 }
 

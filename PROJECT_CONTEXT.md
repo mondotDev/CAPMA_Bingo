@@ -55,7 +55,7 @@ Active event configuration. Important fields:
 - `completionMessage`
 - `squares`
 
-### `events/{eventId}/entries/{ownerUid}`
+### `events/{eventId}/entries/{normalizedEmail}`
 Attendee bingo entry. Important fields:
 - `eventId`
 - `ownerUid`
@@ -74,13 +74,6 @@ Attendee bingo entry. Important fields:
 - `winnerLocked`
 - `winnerLockedAt`
 - `winnerLockedBy`
-
-### `events/{eventId}/emailIndex/{normalizedEmail}`
-Used to enforce one entry per email per event.
-
-Important fields:
-- `ownerUid`
-- `createdAt`
 
 ### `admins/{uid}`
 Admin allowlist document. If present, a signed-in CAPMA Google user is allowed into the admin area.
@@ -129,7 +122,6 @@ Key rules:
 - Attendees can update only their own entry and only before completion.
 - Immutable ownership and identity fields are protected from attendee edits after creation.
 - Admins can list, read, update, and delete entries.
-- Admins can list email index records.
 - `admins/{uid}` is readable only by the matching signed-in user.
 
 Admin status in rules is granted if either:
