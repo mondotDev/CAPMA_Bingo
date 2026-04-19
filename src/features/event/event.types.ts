@@ -19,9 +19,11 @@ export type EventCompletionMessage = {
 
 export type EventSquare = {
   id: string;
-  labelLine1: string;
-  labelLine2: string;
-  labelLine3?: string;
+  label: string;
+  shortLabel?: string;
+  detail: string;
+  category?: string;
+  points: number;
   order: number;
 };
 
@@ -35,4 +37,5 @@ export type EventConfig = {
   onboarding?: EventOnboarding;
   completionMessage?: EventCompletionMessage;
   squares: EventSquare[];
+  requiresSquareUpgrade?: boolean;
 };

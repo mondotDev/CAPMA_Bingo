@@ -48,7 +48,7 @@ Active event configuration. Important fields:
 - `eventId`
 - `name`
 - `isActive`
-- `boardSize` (`4` for the current attendee experience)
+- `boardSize` (`5` for the current attendee experience)
 - `submissionOpen`
 - `theme`
 - `onboarding`
@@ -108,9 +108,9 @@ Theme fields:
 ## Event Validation
 - The app assumes one active event at a time.
 - It queries Firestore for `events` where `isActive == true` and uses the first result.
-- The attendee experience expects a 4x4 board.
-- Active event data must provide `boardSize: 4` and exactly 16 valid squares.
-- Each square is rendered with 2 text lines in the attendee board UI.
+- The attendee experience expects a 5x5 board.
+- Active event data must provide `boardSize: 5` and exactly 25 valid squares.
+- Each square provides a short board `label` plus longer popup `detail`.
 
 ## Security Model
 Firestore rules are a major part of the application logic.

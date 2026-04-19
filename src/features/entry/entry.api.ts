@@ -7,6 +7,7 @@ import {
   serverTimestamp,
   setDoc,
   Timestamp,
+  updateDoc,
   writeBatch,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
@@ -37,6 +38,13 @@ type EntryDocument = {
   winnerLockedBy?: string;
 };
 
+class EntryLookupPermissionError extends Error {
+  constructor() {
+    super("We could not verify your CAPMA Bingo entry yet.");
+    this.name = "EntryLookupPermissionError";
+  }
+}
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
@@ -66,6 +74,18 @@ function isFirestorePermissionDenied(error: unknown) {
 
 function getDuplicateEntryError() {
   return new Error("That email already has a CAPMA Bingo entry for this event.");
+}
+
+function getEntryLookupError() {
+  return new Error("We could not load your CAPMA Bingo entry right now.");
+}
+
+function getEntryCreateError() {
+  return new Error("We could not create your CAPMA Bingo entry right now.");
+}
+
+function getEntryReclaimError() {
+  return new Error("We could not continue your CAPMA Bingo board on this device right now.");
 }
 
 function toDate(value: Timestamp | null | undefined) {
@@ -143,9 +163,54 @@ async function getEntryByEmailKey(
     console.error("[board] load failure", error);
 
     if (isFirestorePermissionDenied(error)) {
-      throw getDuplicateEntryError();
+      console.info("[board] load result", {
+        eventId,
+        normalizedEmail,
+        source: "permission-denied",
+      });
+      throw new EntryLookupPermissionError();
     }
 
+    console.info("[board] load result", {
+      eventId,
+      normalizedEmail,
+      source: "error",
+    });
+    throw error;
+  }
+}
+
+async function reclaimEntryOwnership(
+  eventId: string,
+  normalizedEmail: string,
+  ownerUid: string,
+) {
+  const entryRef = getEntryDocRef(eventId, normalizedEmail);
+
+  console.info("[board] reclaim attempt", {
+    eventId,
+    normalizedEmail,
+    ownerUid,
+  });
+
+  try {
+    await updateDoc(entryRef, {
+      ownerUid,
+      updatedAt: serverTimestamp(),
+    });
+    console.info("[board] reclaim success", {
+      eventId,
+      normalizedEmail,
+      ownerUid,
+    });
+  } catch (error) {
+    console.error("[board] reclaim failure", error);
+    console.info("[board] reclaim blocked", {
+      eventId,
+      normalizedEmail,
+      ownerUid,
+      permissionDenied: isFirestorePermissionDenied(error),
+    });
     throw error;
   }
 }
@@ -159,67 +224,134 @@ export async function createOrLoadEntry(
   const trimmedEmail = values.email.trim();
   const trimmedName = values.name.trim();
   const trimmedCompany = values.company.trim();
-  const existingEntry = await getEntryByEmailKey(eventId, normalizedEmail);
+  console.info("[board] entry create start", {
+    eventId,
+    normalizedEmail,
+    ownerUid,
+  });
+  let lookupWasPermissionDenied = false;
 
-  if (existingEntry) {
-    return existingEntry;
+  try {
+    const existingEntry = await getEntryByEmailKey(eventId, normalizedEmail);
+
+    if (existingEntry) {
+      console.info("[board] entry create resolved", {
+        eventId,
+        normalizedEmail,
+        ownerUid,
+        source: "existing",
+      });
+      return existingEntry;
+    }
+  } catch (error) {
+    if (error instanceof EntryLookupPermissionError) {
+      lookupWasPermissionDenied = true;
+      console.info("[board] entry existing inaccessible", {
+        eventId,
+        normalizedEmail,
+        ownerUid,
+        reason: "permission-denied",
+      });
+
+      try {
+        await reclaimEntryOwnership(eventId, normalizedEmail, ownerUid);
+        const reclaimedEntry = await getEntryByEmailKey(eventId, normalizedEmail);
+
+        if (!reclaimedEntry) {
+          throw getEntryReclaimError();
+        }
+
+        console.info("[board] entry create resolved", {
+          eventId,
+          normalizedEmail,
+          ownerUid,
+          source: "reclaimed",
+        });
+        return reclaimedEntry;
+      } catch (reclaimError) {
+        if (isFirestorePermissionDenied(reclaimError)) {
+          throw getEntryReclaimError();
+        }
+
+        throw reclaimError instanceof Error ? reclaimError : getEntryReclaimError();
+      }
+    } else {
+      throw error instanceof Error ? error : getEntryLookupError();
+    }
   }
 
   const entryRef = getEntryDocRef(eventId, normalizedEmail);
+  const createPayload: EntryDocument = {
+    eventId,
+    ownerUid,
+    emailKey: normalizedEmail,
+    email: trimmedEmail,
+    normalizedEmail,
+    name: trimmedName,
+    company: trimmedCompany,
+    selectedSquares: [],
+    markedSquareIds: [],
+    completed: false,
+    completedAt: null,
+    prizeEntryEligible: false,
+    createdAt: serverTimestamp() as never,
+    updatedAt: serverTimestamp() as never,
+    winnerLocked: false,
+    winnerLockedAt: null,
+    winnerLockedBy: "",
+  };
 
   try {
-    await runTransaction(db, async (transaction) => {
-      const snapshot = await transaction.get(entryRef);
+    console.info("[board] entry create attempt", {
+      eventId,
+      normalizedEmail,
+      ownerUid,
+      source: lookupWasPermissionDenied ? "after-inconclusive-lookup" : "after-missing-lookup",
+    });
+    await setDoc(entryRef, createPayload);
 
-      if (snapshot.exists()) {
-        const existingEntryData = snapshot.data() as EntryDocument;
+    const createdOrExistingEntry = await getEntryByEmailKey(eventId, normalizedEmail);
 
-        if (existingEntryData.ownerUid === ownerUid) {
-          return;
-        }
-
-        throw getDuplicateEntryError();
-      }
-
-      transaction.set(entryRef, {
+    if (!createdOrExistingEntry) {
+      return {
+        id: normalizedEmail,
         eventId,
         ownerUid,
         emailKey: normalizedEmail,
-        email: trimmedEmail,
-        normalizedEmail,
         name: trimmedName,
         company: trimmedCompany,
+        email: trimmedEmail,
+        normalizedEmail,
         selectedSquares: [],
         markedSquareIds: [],
         completed: false,
         completedAt: null,
         prizeEntryEligible: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        createdAt: null,
+        updatedAt: null,
         winnerLocked: false,
         winnerLockedAt: null,
         winnerLockedBy: "",
-      });
-    });
-
-    const createdOrExistingEntry = await getEntryByEmailKey(eventId, normalizedEmail);
-
-    if (!createdOrExistingEntry) {
-      throw new Error("We could not load your CAPMA Bingo entry.");
+      };
     }
 
-    console.info("[board] load success", { eventId, normalizedEmail, source: "created" });
+    console.info("[board] entry create resolved", {
+      eventId,
+      normalizedEmail,
+      ownerUid,
+      source: "created",
+    });
     return createdOrExistingEntry;
   } catch (error) {
     console.error("[board] load failure", error);
 
     if (isFirestorePermissionDenied(error)) {
-      throw getDuplicateEntryError();
+      throw getEntryCreateError();
     }
 
     throw error instanceof Error
       ? error
-      : new Error("We could not create your CAPMA Bingo entry.");
+      : getEntryCreateError();
   }
 }
 

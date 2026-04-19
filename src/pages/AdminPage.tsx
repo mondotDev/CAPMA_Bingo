@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
+  expandSquaresToTwentyFive,
   loadActiveEventForAdmin,
   updateActiveEventSquares,
 } from "../features/event/event.api";
@@ -77,9 +78,11 @@ function normalizeSquareInput(value: string) {
 
 function getSquareSignature(square: EventSquare) {
   return [
-    square.labelLine1.trim(),
-    square.labelLine2.trim(),
-    square.labelLine3?.trim() ?? "",
+    square.label.trim(),
+    square.shortLabel?.trim() ?? "",
+    square.detail.trim(),
+    square.category?.trim() ?? "",
+    String(square.points),
   ].join("|");
 }
 
@@ -120,6 +123,7 @@ export default function AdminPage() {
   const [eventId, setEventId] = useState("");
   const [eventName, setEventName] = useState("");
   const [eventSquares, setEventSquares] = useState<EventSquare[]>([]);
+  const [requiresSquareUpgrade, setRequiresSquareUpgrade] = useState(false);
   const [entries, setEntries] = useState<EntryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -171,6 +175,7 @@ export default function AdminPage() {
         setEventId(activeEvent.eventId);
         setEventName(activeEvent.name);
         setEventSquares(activeEvent.squares);
+        setRequiresSquareUpgrade(Boolean(activeEvent.requiresSquareUpgrade));
         setSavedSquareSignatures(activeEvent.squares.map(getSquareSignature));
         setEntries(activeEntries);
       } catch (loadError) {
@@ -230,19 +235,19 @@ export default function AdminPage() {
 
     eventSquares.forEach((square, index) => {
       const signature = getSquareSignature(square);
-      const hasRequiredLines = square.labelLine1.trim() && square.labelLine2.trim();
+      const hasRequiredContent = square.label.trim() && square.detail.trim();
 
-      if (hasRequiredLines) {
+      if (hasRequiredContent) {
         const existingIndexes = duplicateIndexes.get(signature) ?? [];
         existingIndexes.push(index + 1);
         duplicateIndexes.set(signature, existingIndexes);
       }
 
-      if (square.labelLine1.trim().length > 18 || square.labelLine2.trim().length > 18) {
+      if (square.label.trim().length > 18) {
         longLineIndexes.push(index + 1);
       }
 
-      if ((square.labelLine3?.trim().length ?? 0) > 52) {
+      if (square.detail.trim().length > 52) {
         longDetailIndexes.push(index + 1);
       }
     });
@@ -268,17 +273,15 @@ export default function AdminPage() {
 
   function handleSquareValueChange(
     index: number,
-    field: "labelLine1" | "labelLine2" | "labelLine3",
+    field: "label" | "shortLabel" | "detail",
     value: string,
   ) {
-    const normalizedValue = normalizeSquareInput(value);
-
     setEventSquares((currentSquares) =>
       currentSquares.map((square, squareIndex) =>
         squareIndex === index
           ? {
               ...square,
-              [field]: normalizedValue,
+              [field]: normalizeSquareInput(value),
             }
           : square,
       ),
@@ -293,6 +296,20 @@ export default function AdminPage() {
       return;
     }
 
+    console.info("[admin:event-save] auth-context", {
+      userUid: user?.uid ?? null,
+      userEmail: user?.email ?? null,
+      userProviders:
+        user?.providerData.map((provider) => ({
+          providerId: provider.providerId,
+          uid: provider.uid,
+          email: provider.email ?? null,
+        })) ?? [],
+      requiresSquareUpgrade,
+      eventId,
+      squareCount: eventSquares.length,
+    });
+
     setSavingSquares(true);
     setSquareError(null);
     setActionMessage(null);
@@ -303,15 +320,16 @@ export default function AdminPage() {
         const nextSquares = currentSquares.map((square, index) => ({
           ...square,
           id: square.id.trim() || `square-${String(index + 1).padStart(2, "0")}`,
-          labelLine1: square.labelLine1.trim(),
-          labelLine2: square.labelLine2.trim(),
-          labelLine3: square.labelLine3?.trim() ?? "",
+          label: square.label.trim(),
+          shortLabel: square.shortLabel?.trim() || undefined,
+          detail: square.detail.trim(),
           order: index + 1,
         }));
 
         setSavedSquareSignatures(nextSquares.map(getSquareSignature));
         return nextSquares;
       });
+      setRequiresSquareUpgrade(false);
       setActionMessage("Board tiles updated.");
     } catch (saveError) {
       setSquareError(
@@ -322,6 +340,13 @@ export default function AdminPage() {
     } finally {
       setSavingSquares(false);
     }
+  }
+
+  function handleExpandEventSquares() {
+    setEventSquares((currentSquares) => expandSquaresToTwentyFive(currentSquares));
+    setRequiresSquareUpgrade(false);
+    setSquareError(null);
+    setActionMessage("Expanded the event to 25 squares. Review the new placeholders, then save.");
   }
 
   function handleDrawWinners() {
@@ -567,15 +592,22 @@ export default function AdminPage() {
 
         <AdminSection
           className="admin-drawing-card"
-          description="Edit the attendee board as a fixed 4x4 grid. Line 1 and line 2 appear on the front of the square, and line 3 shows on the back of the flip card."
+          description="Edit the attendee board as a fixed 5x5 grid. Short label appears on the board tile, label is the popup title, and detail is the attendee instruction text."
           eyebrow="Board Setup"
           isCollapsed={collapsedSections.boardSetup}
           onToggle={() => toggleSection("boardSetup")}
           title="Active Event Tiles"
         >
           <div className="admin-board-guidance">
+            {requiresSquareUpgrade ? (
+              <p className="status-message">
+                This active event is still using the legacy 16-square setup. The attendee app
+                will remain unavailable until you expand it to 25 squares and save the upgraded
+                event.
+              </p>
+            ) : null}
             <p className="status-note">
-              Line 3 is the detail copy attendees see after the square zooms and flips open.
+              Keep short label brief for the board. Use label and detail for the fuller attendee view.
             </p>
             {squareGuidance.hasUnsavedChanges ? (
               <p className="status-note admin-board-guidance-warning">
@@ -605,81 +637,87 @@ export default function AdminPage() {
             ) : null}
           </div>
 
-          <div className="admin-square-grid">
-            {eventSquares.map((square, index) => (
-              <article className="admin-square-card" key={square.id || `square-${index + 1}`}>
-                <div className="admin-square-card-header">
-                  <p className="eyebrow">Tile {index + 1}</p>
-                  <span className="admin-square-index">{String(index + 1).padStart(2, "0")}</span>
-                </div>
-                <div className="admin-square-preview">
-                  <div className="admin-square-preview-label">
-                    <span className="admin-square-preview-line">
-                      {square.labelLine1.trim() || "Line 1"}
-                    </span>
-                    <span className="admin-square-preview-line">
-                      {square.labelLine2.trim() || "Line 2"}
-                    </span>
-                    {square.labelLine3?.trim() ? (
-                      <span className="admin-square-preview-line admin-square-preview-line-optional">
-                        {square.labelLine3.trim()}
+          <div className="admin-square-table-wrap">
+            <div className="admin-square-table">
+              <div className="admin-square-table-header">
+                <span>#</span>
+                <span>Board Label</span>
+                <span>Popup Title</span>
+                <span>Detail</span>
+              </div>
+
+              <div className="admin-square-table-body">
+                {eventSquares.map((square, index) => (
+                  <div className="admin-square-row" key={square.id || `square-${index + 1}`}>
+                    <div className="admin-square-row-number">
+                      <span className="admin-square-index">
+                        {String(index + 1).padStart(2, "0")}
                       </span>
-                    ) : null}
+                    </div>
+
+                    <label className="field-group admin-square-row-field">
+                      <span className="field-label admin-square-row-label">Board Label</span>
+                      <input
+                        className="field-input admin-square-input admin-square-row-input"
+                        maxLength={20}
+                        onChange={(event) =>
+                          handleSquareValueChange(index, "shortLabel", event.target.value)
+                        }
+                        placeholder="Board tile text"
+                        type="text"
+                        value={square.shortLabel ?? ""}
+                      />
+                    </label>
+
+                    <label className="field-group admin-square-row-field">
+                      <span className="field-label admin-square-row-label">Popup Title</span>
+                      <input
+                        className="field-input admin-square-input admin-square-row-input"
+                        maxLength={40}
+                        onChange={(event) =>
+                          handleSquareValueChange(index, "label", event.target.value)
+                        }
+                        placeholder="Popup title / full square name"
+                        type="text"
+                        value={square.label}
+                      />
+                    </label>
+
+                    <label className="field-group admin-square-row-field">
+                      <span className="field-label admin-square-row-label">Detail</span>
+                      <textarea
+                        className="field-input admin-square-input admin-square-textarea admin-square-row-textarea"
+                        maxLength={120}
+                        onChange={(event) =>
+                          handleSquareValueChange(index, "detail", event.target.value)
+                        }
+                        placeholder="Popup instruction / attendee detail"
+                        rows={2}
+                        value={square.detail}
+                      />
+                    </label>
                   </div>
-                </div>
-                <div className="admin-square-fields">
-                  <label className="field-group">
-                    <span className="field-label">1</span>
-                    <input
-                      className="field-input admin-square-input"
-                      maxLength={40}
-                      onChange={(event) =>
-                        handleSquareValueChange(index, "labelLine1", event.target.value)
-                      }
-                      placeholder="Top line"
-                      type="text"
-                      value={square.labelLine1}
-                    />
-                  </label>
-
-                  <label className="field-group">
-                    <span className="field-label">2</span>
-                    <input
-                      className="field-input admin-square-input"
-                      maxLength={40}
-                      onChange={(event) =>
-                        handleSquareValueChange(index, "labelLine2", event.target.value)
-                      }
-                      placeholder="Second line"
-                      type="text"
-                      value={square.labelLine2}
-                    />
-                  </label>
-
-                  <label className="field-group">
-                    <span className="field-label">3</span>
-                    <textarea
-                      className="field-input admin-square-input admin-square-textarea"
-                      maxLength={60}
-                      onChange={(event) =>
-                        handleSquareValueChange(index, "labelLine3", event.target.value)
-                      }
-                      placeholder="Optional"
-                      rows={2}
-                      value={square.labelLine3 ?? ""}
-                    />
-                  </label>
-                </div>
-              </article>
-            ))}
+                ))}
+              </div>
+            </div>
           </div>
 
           {squareError ? <p className="status-message">{squareError}</p> : null}
 
           <div className="admin-edit-actions">
+            {requiresSquareUpgrade ? (
+              <button
+                className="admin-link-button"
+                disabled={savingSquares || loading}
+                onClick={handleExpandEventSquares}
+                type="button"
+              >
+                Expand Event To 25 Squares
+              </button>
+            ) : null}
             <button
               className="button-primary admin-drawing-button"
-              disabled={savingSquares || loading}
+              disabled={savingSquares || loading || requiresSquareUpgrade}
               onClick={() => void handleSaveSquares()}
               type="button"
             >

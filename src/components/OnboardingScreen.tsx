@@ -23,7 +23,7 @@ export default function OnboardingScreen({
 
       <div className="info-panel">
         <p className="body-copy">
-          There are 16 squares on the board and no free space in the middle, so every
+          There are 25 squares on the board and no free space in the middle, so every
           square adds to the fun.
         </p>
         <p className="body-copy">
