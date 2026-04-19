@@ -3,12 +3,15 @@ import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
 import AdminPage from "./pages/AdminPage";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import AttendeePage from "./pages/AttendeePage";
+import SponsorsPage from "./pages/SponsorsPage";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route element={<AttendeePage />} path="/" />
+        <Route element={<SponsorsPage />} path="/sponsor" />
+        <Route element={<SponsorsPage />} path="/sponsors" />
         <Route element={<AdminLoginPage />} path="/admin-login" />
         <Route
           element={

@@ -21,6 +21,7 @@ import type {
 type WinnerFilter = "completed" | "all";
 type AdminSectionKey =
   | "boardSetup"
+  | "sponsorInventory"
   | "prizeDrawing"
   | "entries"
   | "editEntry";
@@ -84,6 +85,8 @@ function getSquareSignature(square: EventSquare) {
     square.label.trim(),
     square.detail.trim(),
     square.logoUrl?.trim() ?? "",
+    square.sponsorStatus ?? "",
+    square.sponsorClaimedBy?.trim() ?? "",
     square.category?.trim() ?? "",
     String(square.points),
   ].join("|");
@@ -178,6 +181,7 @@ export default function AdminPage() {
   const [expandedSquareRows, setExpandedSquareRows] = useState<number[]>([]);
   const [collapsedSections, setCollapsedSections] = useState<Record<AdminSectionKey, boolean>>({
     boardSetup: true,
+    sponsorInventory: true,
     prizeDrawing: true,
     entries: true,
     editEntry: true,
@@ -312,6 +316,29 @@ export default function AdminPage() {
     };
   }, [eventSquares, savedSquareSignatures]);
 
+  const sponsorInventorySquares = useMemo(() => {
+    return eventSquares
+      .filter((square) => getTileType(square) === "booth")
+      .map((square) => {
+        const sponsorStatus = square.sponsorStatus ?? "available";
+        const isClaimedReady =
+          sponsorStatus === "claimed"
+          && Boolean(square.sponsorClaimedBy?.trim())
+          && Boolean(square.logoUrl?.trim())
+          && Boolean(square.detail.trim());
+
+        return {
+          id: square.id,
+          order: square.order,
+          boothNumber: square.boardLine2?.trim() || square.shortLabel?.trim() || square.label.trim() || "-",
+          sponsorStatus,
+          sponsorClaimedBy: square.sponsorClaimedBy?.trim() || "—",
+          readiness: sponsorStatus === "claimed" ? (isClaimedReady ? "Ready" : "Missing assets") : "—",
+        };
+      })
+      .sort((firstSquare, secondSquare) => firstSquare.order - secondSquare.order);
+  }, [eventSquares]);
+
   function toggleSection(section: AdminSectionKey) {
     setCollapsedSections((currentSections) => ({
       ...currentSections,
@@ -354,7 +381,15 @@ export default function AdminPage() {
 
   function handleSquareValueChange(
     index: number,
-    field: "boardLine1" | "boardLine2" | "label" | "detail" | "logoUrl" | "tileType",
+    field:
+      | "boardLine1"
+      | "boardLine2"
+      | "label"
+      | "detail"
+      | "logoUrl"
+      | "tileType"
+      | "sponsorStatus"
+      | "sponsorClaimedBy",
     value: string,
   ) {
     setEventSquares((currentSquares) =>
@@ -396,6 +431,11 @@ export default function AdminPage() {
           detail: square.detail.trim(),
           logoUrl: square.logoUrl?.trim() || undefined,
           tileType: getTileType(square),
+          sponsorStatus: square.sponsorStatus ?? (getTileType(square) === "booth" ? "available" : "unavailable"),
+          sponsorClaimedBy:
+            square.sponsorStatus === "claimed"
+              ? square.sponsorClaimedBy?.trim() || undefined
+              : undefined,
           order: index + 1,
         }));
 
@@ -725,6 +765,22 @@ export default function AdminPage() {
                   const tileType = getTileType(square);
                   const logoPreviewUrl = square.logoUrl?.trim() || "";
                   const isExpanded = expandedSquareRows.includes(index);
+                  const sponsorStatus =
+                    square.sponsorStatus ?? (tileType === "booth" ? "available" : "unavailable");
+                  const claimedReadinessWarnings =
+                    sponsorStatus === "claimed"
+                      ? [
+                          ...(square.sponsorClaimedBy?.trim()
+                            ? []
+                            : ["Missing claimed-by name"]),
+                          ...(logoPreviewUrl ? [] : ["Missing logo"]),
+                          ...(square.detail.trim() ? [] : ["Missing sponsor message"]),
+                        ]
+                      : [];
+                  const claimedReadinessState =
+                    sponsorStatus === "claimed"
+                      ? (claimedReadinessWarnings.length === 0 ? "ready" : "missing")
+                      : null;
 
                   return (
                     <div className="admin-square-row-block" key={square.id || `square-${index + 1}`}>
@@ -799,16 +855,30 @@ export default function AdminPage() {
                         </label>
 
                         <div className="admin-square-row-field admin-square-meta-cell">
-                          <span
-                            className={[
-                              "admin-square-logo-status",
-                              logoPreviewUrl ? "admin-square-logo-status-ready" : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                          >
-                            {logoPreviewUrl ? "Logo ready" : "No logo"}
-                          </span>
+                          <div className="admin-square-meta-statuses">
+                            <span
+                              className={[
+                                "admin-square-logo-status",
+                                logoPreviewUrl ? "admin-square-logo-status-ready" : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                            >
+                              {logoPreviewUrl ? "Logo ready" : "No logo"}
+                            </span>
+                            {claimedReadinessState ? (
+                              <span
+                                className={[
+                                  "admin-square-readiness-chip",
+                                  claimedReadinessState === "ready"
+                                    ? "admin-square-readiness-chip-ready"
+                                    : "admin-square-readiness-chip-missing",
+                                ].join(" ")}
+                              >
+                                {claimedReadinessState === "ready" ? "Ready" : "Missing assets"}
+                              </span>
+                            ) : null}
+                          </div>
                           <button
                             className="admin-link-button admin-square-expand-button"
                             onClick={() => toggleSquareRow(index)}
@@ -843,6 +913,24 @@ export default function AdminPage() {
 
                             <label className="field-group admin-square-row-field">
                               <span className="field-label admin-square-expand-label">
+                                Sponsor Status
+                              </span>
+                              <select
+                                className="field-input admin-square-input admin-square-row-input"
+                                onChange={(event) =>
+                                  handleSquareValueChange(index, "sponsorStatus", event.target.value)
+                                }
+                                value={sponsorStatus}
+                              >
+                                <option value="available">available</option>
+                                <option value="claimed">claimed</option>
+                                <option value="held">held</option>
+                                <option value="unavailable">unavailable</option>
+                              </select>
+                            </label>
+
+                            <label className="field-group admin-square-row-field">
+                              <span className="field-label admin-square-expand-label">
                                 Logo URL
                               </span>
                               <div className="admin-square-logo-field">
@@ -866,9 +954,38 @@ export default function AdminPage() {
                                       src={logoPreviewUrl}
                                     />
                                   </div>
-                                ) : null}
-                              </div>
-                            </label>
+                                  ) : null}
+                                </div>
+                              </label>
+
+                              {sponsorStatus === "claimed" ? (
+                                <div className="admin-square-claimed-stack">
+                                  <label className="field-group admin-square-row-field">
+                                    <span className="field-label admin-square-expand-label">
+                                      Claimed By
+                                    </span>
+                                    <input
+                                      className="field-input admin-square-input admin-square-row-input"
+                                      onChange={(event) =>
+                                        handleSquareValueChange(index, "sponsorClaimedBy", event.target.value)
+                                      }
+                                      placeholder="Sponsor or company name"
+                                      type="text"
+                                      value={square.sponsorClaimedBy ?? ""}
+                                    />
+                                  </label>
+
+                                  {claimedReadinessWarnings.length > 0 ? (
+                                    <div className="admin-square-readiness-warnings" role="status">
+                                      {claimedReadinessWarnings.map((warning) => (
+                                        <p className="admin-square-readiness-warning" key={warning}>
+                                          {warning}
+                                        </p>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
                           </div>
                         </div>
                       ) : null}
@@ -900,6 +1017,52 @@ export default function AdminPage() {
             >
               {savingSquares ? "Saving Tiles..." : "Save Tiles"}
             </button>
+          </div>
+        </AdminSection>
+
+        <AdminSection
+          className="admin-drawing-card"
+          description="Quick sponsor-facing inventory for booth tiles, including current status and claimed-square readiness."
+          eyebrow="Sponsor Ops"
+          isCollapsed={collapsedSections.sponsorInventory}
+          onToggle={() => toggleSection("sponsorInventory")}
+          title="Sponsor Inventory"
+        >
+          <div className="admin-sponsor-inventory-wrap">
+            <div className="admin-sponsor-inventory-table" role="table">
+              <div className="admin-sponsor-inventory-header" role="row">
+                <span>Tile #</span>
+                <span>Booth #</span>
+                <span>Sponsor Status</span>
+                <span>Claimed By</span>
+                <span>Readiness</span>
+              </div>
+
+              <div className="admin-sponsor-inventory-body">
+                {sponsorInventorySquares.map((square) => (
+                  <div className="admin-sponsor-inventory-row" key={square.id} role="row">
+                    <span>{square.order}</span>
+                    <span>{square.boothNumber}</span>
+                    <span className="admin-sponsor-inventory-status">{square.sponsorStatus}</span>
+                    <span>{square.sponsorClaimedBy}</span>
+                    <span
+                      className={[
+                        "admin-sponsor-inventory-readiness",
+                        square.readiness === "Ready"
+                          ? "admin-sponsor-inventory-readiness-ready"
+                          : square.readiness === "Missing assets"
+                            ? "admin-sponsor-inventory-readiness-missing"
+                            : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      {square.readiness}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </AdminSection>
 

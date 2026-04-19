@@ -8,7 +8,12 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
-import type { EventConfig, EventSquare, EventSquareTileType } from "./event.types";
+import type {
+  EventConfig,
+  EventSquare,
+  EventSquareSponsorStatus,
+  EventSquareTileType,
+} from "./event.types";
 
 const REQUIRED_BOARD_SIZE = 5;
 const REQUIRED_SQUARE_COUNT = REQUIRED_BOARD_SIZE * REQUIRED_BOARD_SIZE;
@@ -26,6 +31,8 @@ const ALLOWED_EVENT_SQUARE_KEYS = [
   "boardLine2",
   "logoUrl",
   "tileType",
+  "sponsorStatus",
+  "sponsorClaimedBy",
   "category",
 ] as const;
 
@@ -47,6 +54,8 @@ type LegacySquareDocument = {
   detail?: unknown;
   logoUrl?: unknown;
   tileType?: unknown;
+  sponsorStatus?: unknown;
+  sponsorClaimedBy?: unknown;
   category?: unknown;
   points?: unknown;
   order?: unknown;
@@ -64,6 +73,8 @@ type RawSquare = {
   detail: string;
   logoUrl?: string;
   tileType?: EventSquareTileType;
+  sponsorStatus?: EventSquareSponsorStatus;
+  sponsorClaimedBy?: string;
   category?: string;
   points: number;
   order: number;
@@ -80,6 +91,8 @@ function getSeedSquare(order: number): EventSquare {
       detail: PLACEHOLDER_DETAIL,
       logoUrl: undefined,
       tileType: "custom",
+      sponsorStatus: "unavailable",
+      sponsorClaimedBy: undefined,
       category: undefined,
     points: 1,
     order,
@@ -124,6 +137,22 @@ function inferTileType(
   }
 
   return "custom";
+}
+
+function normalizeSponsorStatus(
+  sponsorStatus: unknown,
+  tileType?: EventSquareTileType,
+): EventSquareSponsorStatus {
+  if (
+    sponsorStatus === "available"
+    || sponsorStatus === "claimed"
+    || sponsorStatus === "held"
+    || sponsorStatus === "unavailable"
+  ) {
+    return sponsorStatus;
+  }
+
+  return tileType === "booth" ? "available" : "unavailable";
 }
 
 function splitBoardLabel(value: string) {
@@ -174,6 +203,8 @@ function toRawSquare(square: unknown, index: number): RawSquare | null {
         detail: label,
         logoUrl: undefined,
         tileType: inferTileType(undefined, boardLine1, label),
+        sponsorStatus: inferTileType(undefined, boardLine1, label) === "booth" ? "available" : "unavailable",
+        sponsorClaimedBy: undefined,
         category: undefined,
       points: 1,
       order: index + 1,
@@ -202,19 +233,20 @@ function toRawSquare(square: unknown, index: number): RawSquare | null {
   const boardLine2 =
     normalizeOptionalString(candidate.boardLine2)
     ?? normalizeOptionalString(candidate.labelLine2);
-  const fallbackBoardLines =
-    boardLine1 || boardLine2
-      ? {
-          boardLine1,
-          boardLine2,
+    const fallbackBoardLines =
+      boardLine1 || boardLine2
+        ? {
+            boardLine1,
+            boardLine2,
         }
       : splitBoardLabel(
           (typeof candidate.shortLabel === "string" ? candidate.shortLabel.trim() : "") || label,
-        );
-  const parsedOrder =
-    typeof candidate.order === "number" && Number.isFinite(candidate.order)
-      ? candidate.order
-      : index + 1;
+          );
+    const inferredTileType = inferTileType(candidate.tileType, fallbackBoardLines.boardLine1, label);
+    const parsedOrder =
+      typeof candidate.order === "number" && Number.isFinite(candidate.order)
+        ? candidate.order
+        : index + 1;
 
   return {
     id: typeof candidate.id === "string" ? candidate.id.trim() : "",
@@ -227,7 +259,9 @@ function toRawSquare(square: unknown, index: number): RawSquare | null {
       boardLine2: fallbackBoardLines.boardLine2,
       detail: detail || label,
       logoUrl: normalizeOptionalString(candidate.logoUrl),
-      tileType: inferTileType(candidate.tileType, fallbackBoardLines.boardLine1, label),
+      tileType: inferredTileType,
+      sponsorStatus: normalizeSponsorStatus(candidate.sponsorStatus, inferredTileType),
+      sponsorClaimedBy: normalizeOptionalString(candidate.sponsorClaimedBy),
       category: normalizeCategory(candidate.category),
     points: normalizePoints(candidate.points),
     order: parsedOrder,
@@ -255,6 +289,8 @@ function normalizeSquare(rawSquare: RawSquare, order: number): EventSquare {
       detail: rawSquare.detail.trim() || rawSquare.label.trim(),
       logoUrl: rawSquare.logoUrl?.trim() || undefined,
       tileType: rawSquare.tileType ?? inferTileType(undefined, rawSquare.boardLine1, rawSquare.shortLabel),
+      sponsorStatus: rawSquare.sponsorStatus,
+      sponsorClaimedBy: rawSquare.sponsorClaimedBy?.trim() || undefined,
       category: rawSquare.category,
     points: normalizePoints(rawSquare.points),
     order,
@@ -286,6 +322,12 @@ function validateStrictSquares(boardSize: number, squares: EventSquare[]) {
         || !square.detail
         || (square.logoUrl !== undefined && !square.logoUrl)
         || (square.tileType !== undefined && square.tileType !== "booth" && square.tileType !== "custom")
+        || (square.sponsorStatus !== undefined
+          && square.sponsorStatus !== "available"
+          && square.sponsorStatus !== "claimed"
+          && square.sponsorStatus !== "held"
+          && square.sponsorStatus !== "unavailable")
+        || (square.sponsorClaimedBy !== undefined && !square.sponsorClaimedBy)
         || !Number.isFinite(square.points)
       || square.points <= 0,
   );
@@ -320,6 +362,12 @@ function validateAdminSquares(boardSize: number, squares: EventSquare[]) {
         || !square.detail
         || (square.logoUrl !== undefined && !square.logoUrl)
         || (square.tileType !== undefined && square.tileType !== "booth" && square.tileType !== "custom")
+        || (square.sponsorStatus !== undefined
+          && square.sponsorStatus !== "available"
+          && square.sponsorStatus !== "claimed"
+          && square.sponsorStatus !== "held"
+          && square.sponsorStatus !== "unavailable")
+        || (square.sponsorClaimedBy !== undefined && !square.sponsorClaimedBy)
         || !Number.isFinite(square.points)
       || square.points <= 0,
   );
@@ -364,6 +412,13 @@ export function expandSquaresToTwentyFive(squares: EventSquare[]) {
       detail: square.detail.trim() || square.label.trim(),
       logoUrl: square.logoUrl?.trim() || undefined,
       tileType: square.tileType ?? inferTileType(undefined, square.boardLine1, square.shortLabel),
+      sponsorStatus:
+        square.sponsorStatus
+        ?? normalizeSponsorStatus(
+          undefined,
+          square.tileType ?? inferTileType(undefined, square.boardLine1, square.shortLabel),
+        ),
+      sponsorClaimedBy: square.sponsorClaimedBy?.trim() || undefined,
       order: index + 1,
       points: normalizePoints(square.points),
     }));
@@ -430,6 +485,11 @@ export async function updateActiveEventSquares(eventId: string, squares: EventSq
     const detail = square.detail.trim() || label;
     const logoUrl = normalizeOptionalString(square.logoUrl);
     const tileType = square.tileType === "booth" ? "booth" : "custom";
+    const sponsorStatus = normalizeSponsorStatus(square.sponsorStatus, tileType);
+    const sponsorClaimedBy =
+      sponsorStatus === "claimed"
+        ? normalizeOptionalString(square.sponsorClaimedBy)
+        : undefined;
     const category = normalizeCategory(square.category);
 
     if (!label) {
@@ -445,6 +505,8 @@ export async function updateActiveEventSquares(eventId: string, squares: EventSq
         ...(boardLine2 ? { boardLine2 } : {}),
         ...(logoUrl ? { logoUrl } : {}),
         ...(tileType ? { tileType } : {}),
+        ...(sponsorStatus ? { sponsorStatus } : {}),
+        ...(sponsorClaimedBy ? { sponsorClaimedBy } : {}),
         ...(category ? { category } : {}),
         };
       });
@@ -468,6 +530,13 @@ export async function updateActiveEventSquares(eventId: string, squares: EventSq
         && (!("tileType" in square)
           || square.tileType === "booth"
           || square.tileType === "custom")
+        && (!("sponsorStatus" in square)
+          || square.sponsorStatus === "available"
+          || square.sponsorStatus === "claimed"
+          || square.sponsorStatus === "held"
+          || square.sponsorStatus === "unavailable")
+        && (!("sponsorClaimedBy" in square)
+          || (typeof square.sponsorClaimedBy === "string" && square.sponsorClaimedBy.trim().length > 0))
         && (!("category" in square)
           || (typeof square.category === "string" && square.category.trim().length > 0))
         && Object.keys(square).every((key) =>

@@ -18,6 +18,7 @@ export type EventCompletionMessage = {
 };
 
 export type EventSquareTileType = "booth" | "custom";
+export type EventSquareSponsorStatus = "available" | "claimed" | "held" | "unavailable";
 
 export type EventSquare = {
   id: string;
@@ -28,6 +29,8 @@ export type EventSquare = {
   detail: string;
   logoUrl?: string;
   tileType?: EventSquareTileType;
+  sponsorStatus?: EventSquareSponsorStatus;
+  sponsorClaimedBy?: string;
   category?: string;
   points: number;
   order: number;
