@@ -17,11 +17,17 @@ export type EventCompletionMessage = {
   body?: string;
 };
 
+export type EventSquareTileType = "booth" | "custom";
+
 export type EventSquare = {
   id: string;
   label: string;
   shortLabel?: string;
+  boardLine1?: string;
+  boardLine2?: string;
   detail: string;
+  logoUrl?: string;
+  tileType?: EventSquareTileType;
   category?: string;
   points: number;
   order: number;

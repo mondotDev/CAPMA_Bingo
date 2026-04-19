@@ -8,13 +8,12 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
-import type { EventConfig, EventSquare } from "./event.types";
+import type { EventConfig, EventSquare, EventSquareTileType } from "./event.types";
 
 const REQUIRED_BOARD_SIZE = 5;
 const REQUIRED_SQUARE_COUNT = REQUIRED_BOARD_SIZE * REQUIRED_BOARD_SIZE;
 const LEGACY_BOARD_SIZE = 4;
 const LEGACY_SQUARE_COUNT = LEGACY_BOARD_SIZE * LEGACY_BOARD_SIZE;
-const MAX_LABEL_LENGTH = 20;
 const PLACEHOLDER_DETAIL = "Add Expo activity details";
 const PLACEHOLDER_LABEL_PREFIX = "Square ";
 const ALLOWED_EVENT_SQUARE_KEYS = [
@@ -23,6 +22,10 @@ const ALLOWED_EVENT_SQUARE_KEYS = [
   "detail",
   "order",
   "shortLabel",
+  "boardLine1",
+  "boardLine2",
+  "logoUrl",
+  "tileType",
   "category",
 ] as const;
 
@@ -39,7 +42,11 @@ type LegacySquareDocument = {
   id?: unknown;
   label?: unknown;
   shortLabel?: unknown;
+  boardLine1?: unknown;
+  boardLine2?: unknown;
   detail?: unknown;
+  logoUrl?: unknown;
+  tileType?: unknown;
   category?: unknown;
   points?: unknown;
   order?: unknown;
@@ -52,7 +59,11 @@ type RawSquare = {
   id: string;
   label: string;
   shortLabel?: string;
+  boardLine1?: string;
+  boardLine2?: string;
   detail: string;
+  logoUrl?: string;
+  tileType?: EventSquareTileType;
   category?: string;
   points: number;
   order: number;
@@ -64,8 +75,12 @@ function getSeedSquare(order: number): EventSquare {
     id: `square-${String(order).padStart(2, "0")}`,
     label: `${PLACEHOLDER_LABEL_PREFIX}${order}`,
     shortLabel: `${PLACEHOLDER_LABEL_PREFIX}${order}`,
-    detail: PLACEHOLDER_DETAIL,
-    category: undefined,
+      boardLine1: "Square",
+      boardLine2: String(order),
+      detail: PLACEHOLDER_DETAIL,
+      logoUrl: undefined,
+      tileType: "custom",
+      category: undefined,
     points: 1,
     order,
   };
@@ -88,6 +103,50 @@ function buildLegacyLabel(square: LegacySquareDocument) {
     .trim();
 }
 
+function normalizeOptionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function inferTileType(
+  tileType: unknown,
+  boardLine1?: string,
+  shortLabel?: string,
+): EventSquareTileType {
+  if (tileType === "booth" || tileType === "custom") {
+    return tileType;
+  }
+
+  const normalizedBoardLine1 = boardLine1?.trim().toUpperCase();
+  const normalizedShortLabel = shortLabel?.trim().toUpperCase();
+
+  if (normalizedBoardLine1 === "BOOTH" || normalizedShortLabel === "BOOTH") {
+    return "booth";
+  }
+
+  return "custom";
+}
+
+function splitBoardLabel(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return { boardLine1: undefined, boardLine2: undefined };
+  }
+
+  const words = trimmedValue.split(/\s+/).filter(Boolean);
+
+  if (words.length <= 1) {
+    return { boardLine1: trimmedValue, boardLine2: undefined };
+  }
+
+  const midpoint = Math.ceil(words.length / 2);
+
+  return {
+    boardLine1: words.slice(0, midpoint).join(" "),
+    boardLine2: words.slice(midpoint).join(" "),
+  };
+}
+
 function buildLegacyDetail(square: LegacySquareDocument, fallbackLabel: string) {
   const detailLines = [square.labelLine1, square.labelLine2, square.labelLine3]
     .filter((value): value is string => typeof value === "string")
@@ -100,6 +159,7 @@ function buildLegacyDetail(square: LegacySquareDocument, fallbackLabel: string) 
 function toRawSquare(square: unknown, index: number): RawSquare | null {
   if (typeof square === "string") {
     const label = square.trim();
+    const { boardLine1, boardLine2 } = splitBoardLabel(label);
 
     if (!label) {
       return null;
@@ -109,8 +169,12 @@ function toRawSquare(square: unknown, index: number): RawSquare | null {
       id: "",
       label,
       shortLabel: label,
-      detail: label,
-      category: undefined,
+        boardLine1,
+        boardLine2,
+        detail: label,
+        logoUrl: undefined,
+        tileType: inferTileType(undefined, boardLine1, label),
+        category: undefined,
       points: 1,
       order: index + 1,
       index,
@@ -132,6 +196,21 @@ function toRawSquare(square: unknown, index: number): RawSquare | null {
   const detail =
     (typeof candidate.detail === "string" ? candidate.detail.trim() : "")
     || buildLegacyDetail(candidate, label);
+  const boardLine1 =
+    normalizeOptionalString(candidate.boardLine1)
+    ?? normalizeOptionalString(candidate.labelLine1);
+  const boardLine2 =
+    normalizeOptionalString(candidate.boardLine2)
+    ?? normalizeOptionalString(candidate.labelLine2);
+  const fallbackBoardLines =
+    boardLine1 || boardLine2
+      ? {
+          boardLine1,
+          boardLine2,
+        }
+      : splitBoardLabel(
+          (typeof candidate.shortLabel === "string" ? candidate.shortLabel.trim() : "") || label,
+        );
   const parsedOrder =
     typeof candidate.order === "number" && Number.isFinite(candidate.order)
       ? candidate.order
@@ -144,8 +223,12 @@ function toRawSquare(square: unknown, index: number): RawSquare | null {
       typeof candidate.shortLabel === "string" && candidate.shortLabel.trim()
         ? candidate.shortLabel.trim()
         : undefined,
-    detail: detail || label,
-    category: normalizeCategory(candidate.category),
+      boardLine1: fallbackBoardLines.boardLine1,
+      boardLine2: fallbackBoardLines.boardLine2,
+      detail: detail || label,
+      logoUrl: normalizeOptionalString(candidate.logoUrl),
+      tileType: inferTileType(candidate.tileType, fallbackBoardLines.boardLine1, label),
+      category: normalizeCategory(candidate.category),
     points: normalizePoints(candidate.points),
     order: parsedOrder,
     index,
@@ -167,8 +250,12 @@ function normalizeSquare(rawSquare: RawSquare, order: number): EventSquare {
     id: rawSquare.id || getSeedSquare(order).id,
     label: rawSquare.label.trim(),
     shortLabel: rawSquare.shortLabel?.trim() || undefined,
-    detail: rawSquare.detail.trim() || rawSquare.label.trim(),
-    category: rawSquare.category,
+      boardLine1: rawSquare.boardLine1?.trim() || undefined,
+      boardLine2: rawSquare.boardLine2?.trim() || undefined,
+      detail: rawSquare.detail.trim() || rawSquare.label.trim(),
+      logoUrl: rawSquare.logoUrl?.trim() || undefined,
+      tileType: rawSquare.tileType ?? inferTileType(undefined, rawSquare.boardLine1, rawSquare.shortLabel),
+      category: rawSquare.category,
     points: normalizePoints(rawSquare.points),
     order,
   };
@@ -194,9 +281,12 @@ function validateStrictSquares(boardSize: number, squares: EventSquare[]) {
       !square.id
       || !square.label
       || (square.shortLabel !== undefined && !square.shortLabel)
-      || !square.detail
-      || square.label.length > MAX_LABEL_LENGTH
-      || !Number.isFinite(square.points)
+      || (square.boardLine1 !== undefined && !square.boardLine1)
+        || (square.boardLine2 !== undefined && !square.boardLine2)
+        || !square.detail
+        || (square.logoUrl !== undefined && !square.logoUrl)
+        || (square.tileType !== undefined && square.tileType !== "booth" && square.tileType !== "custom")
+        || !Number.isFinite(square.points)
       || square.points <= 0,
   );
 
@@ -225,8 +315,12 @@ function validateAdminSquares(boardSize: number, squares: EventSquare[]) {
       !square.id
       || !square.label
       || (square.shortLabel !== undefined && !square.shortLabel)
-      || !square.detail
-      || !Number.isFinite(square.points)
+      || (square.boardLine1 !== undefined && !square.boardLine1)
+        || (square.boardLine2 !== undefined && !square.boardLine2)
+        || !square.detail
+        || (square.logoUrl !== undefined && !square.logoUrl)
+        || (square.tileType !== undefined && square.tileType !== "booth" && square.tileType !== "custom")
+        || !Number.isFinite(square.points)
       || square.points <= 0,
   );
 
@@ -265,7 +359,11 @@ export function expandSquaresToTwentyFive(squares: EventSquare[]) {
       id: square.id.trim() || getSeedSquare(index + 1).id,
       label: square.label.trim(),
       shortLabel: square.shortLabel?.trim() || square.label.trim(),
+      boardLine1: square.boardLine1?.trim() || undefined,
+      boardLine2: square.boardLine2?.trim() || undefined,
       detail: square.detail.trim() || square.label.trim(),
+      logoUrl: square.logoUrl?.trim() || undefined,
+      tileType: square.tileType ?? inferTileType(undefined, square.boardLine1, square.shortLabel),
       order: index + 1,
       points: normalizePoints(square.points),
     }));
@@ -326,17 +424,16 @@ export async function updateActiveEventSquares(eventId: string, squares: EventSq
   }
 
   const nextSquares = squares.map((square, index) => {
-    const label = square.label.trim().toUpperCase();
-    const shortLabel = square.shortLabel?.trim().toUpperCase() || "";
+    const label = square.label.trim();
+    const boardLine1 = square.boardLine1?.trim() || "";
+    const boardLine2 = square.boardLine2?.trim() || "";
     const detail = square.detail.trim() || label;
+    const logoUrl = normalizeOptionalString(square.logoUrl);
+    const tileType = square.tileType === "booth" ? "booth" : "custom";
     const category = normalizeCategory(square.category);
 
     if (!label) {
-      throw new Error("Every tile needs a short board label before saving.");
-    }
-
-    if (label.length > MAX_LABEL_LENGTH) {
-      throw new Error("Square labels must stay within 20 characters for the board.");
+      throw new Error("Every tile needs a popup title before saving.");
     }
 
     return {
@@ -344,10 +441,13 @@ export async function updateActiveEventSquares(eventId: string, squares: EventSq
       label,
       detail,
       order: index + 1,
-      ...(shortLabel ? { shortLabel } : {}),
-      ...(category ? { category } : {}),
-      };
-    });
+        ...(boardLine1 ? { boardLine1 } : {}),
+        ...(boardLine2 ? { boardLine2 } : {}),
+        ...(logoUrl ? { logoUrl } : {}),
+        ...(tileType ? { tileType } : {}),
+        ...(category ? { category } : {}),
+        };
+      });
   const invalidSquares = nextSquares
     .map((square, index) => ({
       index,
@@ -359,8 +459,15 @@ export async function updateActiveEventSquares(eventId: string, squares: EventSq
         && typeof square.detail === "string"
         && square.detail.trim().length > 0
         && square.order === index + 1
-        && (!("shortLabel" in square)
-          || (typeof square.shortLabel === "string" && square.shortLabel.trim().length > 0))
+        && (!("boardLine1" in square)
+          || (typeof square.boardLine1 === "string" && square.boardLine1.trim().length > 0))
+        && (!("boardLine2" in square)
+          || (typeof square.boardLine2 === "string" && square.boardLine2.trim().length > 0))
+        && (!("logoUrl" in square)
+          || (typeof square.logoUrl === "string" && square.logoUrl.trim().length > 0))
+        && (!("tileType" in square)
+          || square.tileType === "booth"
+          || square.tileType === "custom")
         && (!("category" in square)
           || (typeof square.category === "string" && square.category.trim().length > 0))
         && Object.keys(square).every((key) =>

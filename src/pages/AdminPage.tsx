@@ -6,7 +6,7 @@ import {
   updateActiveEventSquares,
 } from "../features/event/event.api";
 import { useAdminAuth } from "../features/admin/adminAuth";
-import type { EventSquare } from "../features/event/event.types";
+import type { EventSquare, EventSquareTileType } from "../features/event/event.types";
 import {
   deleteEntryById,
   getEntriesByEventId,
@@ -73,17 +73,46 @@ function shuffleEntries(entries: EntryRecord[]) {
 }
 
 function normalizeSquareInput(value: string) {
-  return value.toUpperCase();
+  return value;
 }
 
 function getSquareSignature(square: EventSquare) {
   return [
+    getTileType(square),
+    square.boardLine1?.trim() ?? "",
+    square.boardLine2?.trim() ?? "",
     square.label.trim(),
-    square.shortLabel?.trim() ?? "",
     square.detail.trim(),
+    square.logoUrl?.trim() ?? "",
     square.category?.trim() ?? "",
     String(square.points),
   ].join("|");
+}
+
+function getBoardPreviewLines(square: EventSquare) {
+  const boardLine1 = square.boardLine1?.trim() ?? "";
+  const boardLine2 = square.boardLine2?.trim() ?? "";
+
+  if (boardLine1 || boardLine2) {
+    return {
+      line1: boardLine1 || "Line 1",
+      line2: boardLine2 || "Line 2",
+    };
+  }
+
+  const fallback = square.shortLabel?.trim() || square.label.trim() || "Preview";
+  return {
+    line1: fallback,
+    line2: "",
+  };
+}
+
+function getTileType(square: EventSquare): EventSquareTileType {
+  if (square.tileType === "booth" || square.tileType === "custom") {
+    return square.tileType;
+  }
+
+  return square.boardLine1?.trim().toUpperCase() === "BOOTH" ? "booth" : "custom";
 }
 
 function AdminSection({
@@ -146,6 +175,7 @@ export default function AdminPage() {
   const [squareError, setSquareError] = useState<string | null>(null);
   const [savingSquares, setSavingSquares] = useState(false);
   const [savedSquareSignatures, setSavedSquareSignatures] = useState<string[]>([]);
+  const [expandedSquareRows, setExpandedSquareRows] = useState<number[]>([]);
   const [collapsedSections, setCollapsedSections] = useState<Record<AdminSectionKey, boolean>>({
     boardSetup: true,
     prizeDrawing: true,
@@ -229,38 +259,56 @@ export default function AdminPage() {
   }, [winnerResults]);
 
   const squareGuidance = useMemo(() => {
-    const duplicateIndexes = new Map<string, number[]>();
-    const longLineIndexes: number[] = [];
-    const longDetailIndexes: number[] = [];
+    const duplicateIndexes = new Map<string, { indexes: number[]; preview: string }>();
+    const longFieldWarnings: Array<{ field: string; tile: number }> = [];
 
     eventSquares.forEach((square, index) => {
       const signature = getSquareSignature(square);
       const hasRequiredContent = square.label.trim() && square.detail.trim();
 
       if (hasRequiredContent) {
-        const existingIndexes = duplicateIndexes.get(signature) ?? [];
-        existingIndexes.push(index + 1);
-        duplicateIndexes.set(signature, existingIndexes);
+        const existingEntry = duplicateIndexes.get(signature) ?? {
+          indexes: [],
+          preview: [square.boardLine1?.trim(), square.boardLine2?.trim()]
+            .filter(Boolean)
+            .join(" / ")
+            || square.label.trim(),
+        };
+        existingEntry.indexes.push(index + 1);
+        duplicateIndexes.set(signature, existingEntry);
       }
 
-      if (square.label.trim().length > 18) {
-        longLineIndexes.push(index + 1);
+      const boardCopy = [square.boardLine1?.trim(), square.boardLine2?.trim()]
+        .filter(Boolean)
+        .join(" ")
+        || square.shortLabel?.trim()
+        || square.label.trim();
+
+      if ((square.boardLine1?.trim().length ?? 0) > 14) {
+        longFieldWarnings.push({ field: "Board Line 1", tile: index + 1 });
+      }
+
+      if ((square.boardLine2?.trim().length ?? 0) > 14) {
+        longFieldWarnings.push({ field: "Board Line 2", tile: index + 1 });
+      }
+
+      if (!square.boardLine1?.trim() && boardCopy.length > 18) {
+        longFieldWarnings.push({ field: "Board preview", tile: index + 1 });
       }
 
       if (square.detail.trim().length > 52) {
-        longDetailIndexes.push(index + 1);
+        longFieldWarnings.push({ field: "Detail", tile: index + 1 });
       }
     });
 
-    const duplicateGroups = Array.from(duplicateIndexes.values()).filter((indexes) => indexes.length > 1);
+    const duplicateGroups = Array.from(duplicateIndexes.values()).filter((entry) => entry.indexes.length > 1);
 
     return {
       duplicateGroups,
       hasUnsavedChanges:
         eventSquares.length > 0
         && eventSquares.map(getSquareSignature).join("||") !== savedSquareSignatures.join("||"),
-      longDetailIndexes,
-      longLineIndexes,
+      longFieldWarnings,
     };
   }, [eventSquares, savedSquareSignatures]);
 
@@ -271,9 +319,42 @@ export default function AdminPage() {
     }));
   }
 
+  function toggleSquareRow(index: number) {
+    setExpandedSquareRows((currentRows) =>
+      currentRows.includes(index)
+        ? currentRows.filter((rowIndex) => rowIndex !== index)
+        : [...currentRows, index],
+    );
+  }
+
+  function handleSquareTypeChange(index: number, tileType: EventSquareTileType) {
+    setEventSquares((currentSquares) =>
+      currentSquares.map((square, squareIndex) => {
+        if (squareIndex !== index) {
+          return square;
+        }
+
+        if (tileType === "booth") {
+          return {
+            ...square,
+            tileType,
+            boardLine1: "BOOTH",
+          };
+        }
+
+        return {
+          ...square,
+          tileType,
+        };
+      }),
+    );
+    setSquareError(null);
+    setActionMessage(null);
+  }
+
   function handleSquareValueChange(
     index: number,
-    field: "label" | "shortLabel" | "detail",
+    field: "boardLine1" | "boardLine2" | "label" | "detail" | "logoUrl" | "tileType",
     value: string,
   ) {
     setEventSquares((currentSquares) =>
@@ -307,8 +388,14 @@ export default function AdminPage() {
           ...square,
           id: square.id.trim() || `square-${String(index + 1).padStart(2, "0")}`,
           label: square.label.trim(),
-          shortLabel: square.shortLabel?.trim() || undefined,
+          boardLine1:
+            getTileType(square) === "booth"
+              ? "BOOTH"
+              : square.boardLine1?.trim() || undefined,
+          boardLine2: square.boardLine2?.trim() || undefined,
           detail: square.detail.trim(),
+          logoUrl: square.logoUrl?.trim() || undefined,
+          tileType: getTileType(square),
           order: index + 1,
         }));
 
@@ -578,7 +665,7 @@ export default function AdminPage() {
 
         <AdminSection
           className="admin-drawing-card"
-          description="Edit the attendee board as a fixed 5x5 grid. Short label appears on the board tile, label is the popup title, and detail is the attendee instruction text."
+          description="Edit the attendee board as a fixed 5x5 grid. Board Line 1 and Board Line 2 control the tile text, while Popup Title, Detail, and optional Logo URL shape the popup."
           eyebrow="Board Setup"
           isCollapsed={collapsedSections.boardSetup}
           onToggle={() => toggleSection("boardSetup")}
@@ -593,7 +680,7 @@ export default function AdminPage() {
               </p>
             ) : null}
             <p className="status-note">
-              Keep short label brief for the board. Use label and detail for the fuller attendee view.
+              Booth rows lock Board Line 1 to BOOTH. Use Board Line 2 for booth number, Popup Title for company name, and Detail for attendee instructions.
             </p>
             {squareGuidance.hasUnsavedChanges ? (
               <p className="status-note admin-board-guidance-warning">
@@ -606,19 +693,18 @@ export default function AdminPage() {
             )}
             {squareGuidance.duplicateGroups.length > 0 ? (
               <p className="status-message">
-                Duplicate tile copy detected in tiles {squareGuidance.duplicateGroups
-                  .map((indexes) => indexes.join(", "))
+                Duplicate tile copy detected: {squareGuidance.duplicateGroups
+                  .map((entry) => `"${entry.preview}" in tiles ${entry.indexes.join(", ")}`)
                   .join(" and ")}.
               </p>
             ) : null}
-            {squareGuidance.longLineIndexes.length > 0 ? (
+            {squareGuidance.longFieldWarnings.length > 0 ? (
               <p className="status-note">
-                Front-of-card copy may wrap tightly in tiles {squareGuidance.longLineIndexes.join(", ")}.
-              </p>
-            ) : null}
-            {squareGuidance.longDetailIndexes.length > 0 ? (
-              <p className="status-note">
-                Back-of-card detail is getting long in tiles {squareGuidance.longDetailIndexes.join(", ")}.
+                Watch copy length: {squareGuidance.longFieldWarnings
+                  .slice(0, 5)
+                  .map((warning) => `${warning.field} on tile ${warning.tile}`)
+                  .join(", ")}
+                {squareGuidance.longFieldWarnings.length > 5 ? ", ..." : ""}.
               </p>
             ) : null}
           </div>
@@ -627,63 +713,168 @@ export default function AdminPage() {
             <div className="admin-square-table">
               <div className="admin-square-table-header">
                 <span>#</span>
-                <span>Board Label</span>
+                <span>Type</span>
+                <span>Board Line 1</span>
+                <span>Board Line 2</span>
                 <span>Popup Title</span>
-                <span>Detail</span>
+                <span>Logo</span>
               </div>
 
               <div className="admin-square-table-body">
-                {eventSquares.map((square, index) => (
-                  <div className="admin-square-row" key={square.id || `square-${index + 1}`}>
-                    <div className="admin-square-row-number">
-                      <span className="admin-square-index">
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
+                {eventSquares.map((square, index) => {
+                  const tileType = getTileType(square);
+                  const logoPreviewUrl = square.logoUrl?.trim() || "";
+                  const isExpanded = expandedSquareRows.includes(index);
+
+                  return (
+                    <div className="admin-square-row-block" key={square.id || `square-${index + 1}`}>
+                      <div className="admin-square-row">
+                        <div className="admin-square-row-number">
+                          <div className="admin-square-anchor">
+                            <span className="admin-square-index">
+                              {String(index + 1).padStart(2, "0")}
+                            </span>
+                            <div className="admin-square-mini-preview" aria-hidden="true">
+                              <span className="admin-square-mini-line">
+                                {getBoardPreviewLines(square).line1}
+                              </span>
+                              <span className="admin-square-mini-line">
+                                {getBoardPreviewLines(square).line2 || "\u00A0"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <label className="field-group admin-square-row-field">
+                          <select
+                            className="field-input admin-square-input admin-square-row-input admin-square-type-select"
+                            onChange={(event) =>
+                              handleSquareTypeChange(index, event.target.value as EventSquareTileType)
+                            }
+                            value={tileType}
+                          >
+                            <option value="booth">Booth</option>
+                            <option value="custom">Custom</option>
+                          </select>
+                        </label>
+
+                        <label className="field-group admin-square-row-field">
+                          <input
+                            className="field-input admin-square-input admin-square-row-input"
+                            disabled={tileType === "booth"}
+                            maxLength={20}
+                            onChange={(event) =>
+                              handleSquareValueChange(index, "boardLine1", event.target.value)
+                            }
+                            placeholder={tileType === "booth" ? "Locked to BOOTH" : "Top tile line"}
+                            type="text"
+                            value={tileType === "booth" ? "BOOTH" : (square.boardLine1 ?? "")}
+                          />
+                        </label>
+
+                        <label className="field-group admin-square-row-field">
+                          <input
+                            className="field-input admin-square-input admin-square-row-input"
+                            maxLength={20}
+                            onChange={(event) =>
+                              handleSquareValueChange(index, "boardLine2", event.target.value)
+                            }
+                            placeholder={tileType === "booth" ? "Booth #" : "Bottom tile line"}
+                            type="text"
+                            value={square.boardLine2 ?? ""}
+                          />
+                        </label>
+
+                        <label className="field-group admin-square-row-field">
+                          <input
+                            className="field-input admin-square-input admin-square-row-input"
+                            maxLength={80}
+                            onChange={(event) =>
+                              handleSquareValueChange(index, "label", event.target.value)
+                            }
+                            placeholder="Popup title / full square name"
+                            type="text"
+                            value={square.label}
+                          />
+                        </label>
+
+                        <div className="admin-square-row-field admin-square-meta-cell">
+                          <span
+                            className={[
+                              "admin-square-logo-status",
+                              logoPreviewUrl ? "admin-square-logo-status-ready" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                          >
+                            {logoPreviewUrl ? "Logo ready" : "No logo"}
+                          </span>
+                          <button
+                            className="admin-link-button admin-square-expand-button"
+                            onClick={() => toggleSquareRow(index)}
+                            type="button"
+                          >
+                            {isExpanded ? "Hide" : "More"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {isExpanded ? (
+                        <div className="admin-square-row-expand">
+                          <div className="admin-square-row-expand-header">
+                            <span className="admin-square-row-expand-title">Popup content</span>
+                          </div>
+                          <div className="admin-square-row-expand-grid">
+                            <label className="field-group admin-square-row-field">
+                              <span className="field-label admin-square-expand-label">
+                                Popup Detail
+                              </span>
+                              <textarea
+                                className="field-input admin-square-input admin-square-textarea admin-square-row-textarea"
+                                maxLength={220}
+                                onChange={(event) =>
+                                  handleSquareValueChange(index, "detail", event.target.value)
+                                }
+                                placeholder="Popup instruction / attendee detail"
+                                rows={3}
+                                value={square.detail}
+                              />
+                            </label>
+
+                            <label className="field-group admin-square-row-field">
+                              <span className="field-label admin-square-expand-label">
+                                Logo URL
+                              </span>
+                              <div className="admin-square-logo-field">
+                                <input
+                                  className="field-input admin-square-input admin-square-row-input"
+                                  onChange={(event) =>
+                                    handleSquareValueChange(index, "logoUrl", event.target.value)
+                                  }
+                                  placeholder="https://..."
+                                  type="url"
+                                  value={square.logoUrl ?? ""}
+                                />
+                                <p className="admin-square-expand-help">
+                                  Add an optional popup logo URL for this tile.
+                                </p>
+                                {logoPreviewUrl ? (
+                                  <div className="admin-square-logo-preview">
+                                    <img
+                                      alt={`${square.label || `Tile ${index + 1}`} logo preview`}
+                                      className="admin-square-logo-preview-image"
+                                      src={logoPreviewUrl}
+                                    />
+                                  </div>
+                                ) : null}
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
-
-                    <label className="field-group admin-square-row-field">
-                      <span className="field-label admin-square-row-label">Board Label</span>
-                      <input
-                        className="field-input admin-square-input admin-square-row-input"
-                        maxLength={20}
-                        onChange={(event) =>
-                          handleSquareValueChange(index, "shortLabel", event.target.value)
-                        }
-                        placeholder="Board tile text"
-                        type="text"
-                        value={square.shortLabel ?? ""}
-                      />
-                    </label>
-
-                    <label className="field-group admin-square-row-field">
-                      <span className="field-label admin-square-row-label">Popup Title</span>
-                      <input
-                        className="field-input admin-square-input admin-square-row-input"
-                        maxLength={40}
-                        onChange={(event) =>
-                          handleSquareValueChange(index, "label", event.target.value)
-                        }
-                        placeholder="Popup title / full square name"
-                        type="text"
-                        value={square.label}
-                      />
-                    </label>
-
-                    <label className="field-group admin-square-row-field">
-                      <span className="field-label admin-square-row-label">Detail</span>
-                      <textarea
-                        className="field-input admin-square-input admin-square-textarea admin-square-row-textarea"
-                        maxLength={120}
-                        onChange={(event) =>
-                          handleSquareValueChange(index, "detail", event.target.value)
-                        }
-                        placeholder="Popup instruction / attendee detail"
-                        rows={2}
-                        value={square.detail}
-                      />
-                    </label>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

@@ -98,6 +98,36 @@ export default function BingoBoard({
     requestCloseExpandedSquare();
   }
 
+  function renderBoardTileCopy(square: EventSquare) {
+    const isBoothTile =
+      square.tileType === "booth" || square.boardLine1?.trim().toUpperCase() === "BOOTH";
+    const line1 = square.boardLine1?.trim() ?? "";
+    const line2 = square.boardLine2?.trim() ?? "";
+
+    if (isBoothTile) {
+      return (
+        <span className="board-square-lines board-square-lines-booth">
+          <span className="board-square-line board-square-line-booth-prefix">BOOTH</span>
+          <span className="board-square-line board-square-line-booth-number">
+            {line2 || "\u00A0"}
+          </span>
+        </span>
+      );
+    }
+
+    if (line1 || line2) {
+      return (
+        <span className="board-square-lines">
+          <span className="board-square-line">{line1 || "\u00A0"}</span>
+          <span className="board-square-line">{line2 || "\u00A0"}</span>
+        </span>
+      );
+    }
+
+    const tileLabel = square.shortLabel?.trim() || square.label;
+    return <span className="square-label">{tileLabel}</span>;
+  }
+
   return (
     <div className="board-layout">
       <div className="board-header">
@@ -149,7 +179,6 @@ export default function BingoBoard({
       >
         {squares.map((square, index) => {
           const selected = markedSquareIds.includes(square.id);
-          const tileLabel = square.shortLabel?.trim() || square.label;
 
           return (
             <button
@@ -164,9 +193,9 @@ export default function BingoBoard({
             >
               <span className="board-square-topline">
                 <span className="board-square-number">{index + 1}</span>
-                {selected ? <span className="board-square-check" aria-hidden="true">✓</span> : null}
+                {selected ? <span aria-hidden="true" className="board-square-check">✓</span> : null}
               </span>
-              <span className="square-label">{tileLabel}</span>
+              {renderBoardTileCopy(square)}
             </button>
           );
         })}
@@ -195,6 +224,15 @@ export default function BingoBoard({
             role="dialog"
           >
             <div className="board-square-sheet-grabber" />
+            {expandedSquare.logoUrl ? (
+              <div className="board-square-sheet-logo-wrap">
+                <img
+                  alt={`${expandedSquare.label} logo`}
+                  className="board-square-sheet-logo"
+                  src={expandedSquare.logoUrl}
+                />
+              </div>
+            ) : null}
             <div className="board-square-sheet-header">
               <div className="board-square-sheet-title-wrap">
                 <p className="eyebrow">Square Detail</p>
