@@ -296,20 +296,6 @@ export default function AdminPage() {
       return;
     }
 
-    console.info("[admin:event-save] auth-context", {
-      userUid: user?.uid ?? null,
-      userEmail: user?.email ?? null,
-      userProviders:
-        user?.providerData.map((provider) => ({
-          providerId: provider.providerId,
-          uid: provider.uid,
-          email: provider.email ?? null,
-        })) ?? [],
-      requiresSquareUpgrade,
-      eventId,
-      squareCount: eventSquares.length,
-    });
-
     setSavingSquares(true);
     setSquareError(null);
     setActionMessage(null);

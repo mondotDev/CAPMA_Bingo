@@ -346,29 +346,11 @@ export async function updateActiveEventSquares(eventId: string, squares: EventSq
       order: index + 1,
       ...(shortLabel ? { shortLabel } : {}),
       ...(category ? { category } : {}),
-    };
-  });
-
-  const legacyDerivedSquare =
-    nextSquares.find(
-      (square) =>
-        !square.label.startsWith(PLACEHOLDER_LABEL_PREFIX.toUpperCase())
-        || square.detail !== PLACEHOLDER_DETAIL,
-    ) ?? null;
-  const placeholderSquare =
-    nextSquares.find(
-      (square) =>
-        square.label.startsWith(PLACEHOLDER_LABEL_PREFIX.toUpperCase())
-        && square.detail === PLACEHOLDER_DETAIL,
-    ) ?? null;
+      };
+    });
   const invalidSquares = nextSquares
     .map((square, index) => ({
       index,
-      square,
-      keys: Object.keys(square),
-      extraKeys: Object.keys(square).filter(
-        (key) => !ALLOWED_EVENT_SQUARE_KEYS.includes(key as (typeof ALLOWED_EVENT_SQUARE_KEYS)[number]),
-      ),
       valid:
         typeof square.id === "string"
         && square.id.trim().length > 0
@@ -386,42 +368,9 @@ export async function updateActiveEventSquares(eventId: string, squares: EventSq
         ),
     }))
     .filter((entry) => !entry.valid);
-
-  console.info("[admin:event-save] payload", {
-    boardSize: REQUIRED_BOARD_SIZE,
-    nextSquaresLength: nextSquares.length,
-    sampleSquare: JSON.stringify(nextSquares[0] ?? null),
-    firstSquareKeys: Object.keys(nextSquares[0] ?? {}),
-    placeholderSquareKeys: Object.keys(nextSquares[16] ?? {}),
-    legacyDerivedSquare: legacyDerivedSquare ? JSON.stringify(legacyDerivedSquare) : null,
-    placeholderSquare: placeholderSquare ? JSON.stringify(placeholderSquare) : null,
-    invalidSquareCount: invalidSquares.length,
-    invalidSquares: invalidSquares.map((entry) => ({
-      index: entry.index,
-      keys: entry.keys,
-      extraKeys: entry.extraKeys,
-      shortLabelPresent: "shortLabel" in entry.square,
-      shortLabelValue: "shortLabel" in entry.square ? entry.square.shortLabel : null,
-      categoryPresent: "category" in entry.square,
-      categoryValue: "category" in entry.square ? entry.square.category : null,
-      square: JSON.stringify(entry.square),
-    })),
-    firestoreWrite: {
-      method: "updateDoc",
-      path: `events/${eventId}`,
-      payloadKeys: ["boardSize", "squares"],
-    },
-    authUser: {
-      uid: auth.currentUser?.uid ?? null,
-      email: auth.currentUser?.email ?? null,
-      providerData:
-        auth.currentUser?.providerData.map((provider) => ({
-          providerId: provider.providerId,
-          uid: provider.uid,
-          email: provider.email ?? null,
-        })) ?? [],
-    },
-  });
+  if (invalidSquares.length > 0) {
+    throw new Error(`Square ${invalidSquares[0].index + 1} is missing required save data.`);
+  }
 
   await updateDoc(doc(db, "events", eventId), {
     boardSize: REQUIRED_BOARD_SIZE,

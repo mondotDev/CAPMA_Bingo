@@ -149,45 +149,10 @@ service cloud.firestore {
         && request.resource.data.winnerLockedBy == "";
     }
 
-    function eventSquareValid(square, expectedOrder) {
-      // TEMP DIAGNOSTIC STAGE B1:
-      // minimal square contract only; re-add keys/non-empty/optional-field checks incrementally.
-      return square is map
-        && square.id is string
-        && square.label is string
-        && square.detail is string
-        && square.order == expectedOrder
-        ;
-    }
-
     function eventSquaresValid(squares) {
       return squares is list
         && squares.size() == 25
-        && eventSquareValid(squares[0], 1)
-        && eventSquareValid(squares[1], 2)
-        && eventSquareValid(squares[2], 3)
-        && eventSquareValid(squares[3], 4)
-        && eventSquareValid(squares[4], 5)
-        && eventSquareValid(squares[5], 6)
-        && eventSquareValid(squares[6], 7)
-        && eventSquareValid(squares[7], 8)
-        && eventSquareValid(squares[8], 9)
-        && eventSquareValid(squares[9], 10)
-        && eventSquareValid(squares[10], 11)
-        && eventSquareValid(squares[11], 12)
-        && eventSquareValid(squares[12], 13)
-        && eventSquareValid(squares[13], 14)
-        && eventSquareValid(squares[14], 15)
-        && eventSquareValid(squares[15], 16)
-        && eventSquareValid(squares[16], 17)
-        && eventSquareValid(squares[17], 18)
-        && eventSquareValid(squares[18], 19)
-        && eventSquareValid(squares[19], 20)
-        && eventSquareValid(squares[20], 21)
-        && eventSquareValid(squares[21], 22)
-        && eventSquareValid(squares[22], 23)
-        && eventSquareValid(squares[23], 24)
-        && eventSquareValid(squares[24], 25);
+        ;
     }
 
     function eventKeysPreserved() {
@@ -223,11 +188,7 @@ service cloud.firestore {
 
     match /events/{eventId} {
       allow read: if true;
-      // TEMP DIAGNOSTIC STAGE B:
-      // isolates boardSize + square-shape validation from eventKeysPreserved/eventUneditedFieldsValid.
-      allow update: if isCapmaAdmin()
-        && eventBoardSizeValid()
-        && eventSquaresValid(request.resource.data.squares);
+      allow update: if isCapmaAdmin() && eventUpdateValid();
       allow create, delete: if false;
 
       match /entries/{entryId} {
