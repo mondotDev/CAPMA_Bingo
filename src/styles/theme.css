@@ -54,7 +54,7 @@
     background: color-mix(in srgb, var(--color-background) 92%, white);
     box-shadow: 0 18px 40px color-mix(in srgb, var(--color-primary) 12%, transparent);
     border-radius: 1.5rem;
-    padding: 1.25rem;
+    padding: 1rem;
   }
 
   .display-title {
@@ -373,8 +373,8 @@
   .attendee-brand-header {
     display: flex;
     justify-content: center;
-    margin-bottom: 1rem;
-    padding-bottom: 0.8rem;
+    margin-bottom: 0.65rem;
+    padding-bottom: 0.55rem;
     border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 12%, transparent);
   }
 
@@ -382,7 +382,7 @@
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
-    gap: 0.65rem;
+    gap: 0.55rem;
     min-width: 0;
     width: fit-content;
     max-width: 100%;
@@ -391,7 +391,7 @@
 
   .attendee-brand-logo {
     display: block;
-    width: 3.15rem;
+    width: 2.8rem;
     height: auto;
     flex-shrink: 0;
     border-radius: 0.9rem;
@@ -403,12 +403,12 @@
     min-width: 0;
     margin: 0;
     font-family: var(--font-heading);
-    font-size: clamp(1.1rem, 3.7vw, 1.45rem);
+    font-size: clamp(1rem, 3.3vw, 1.35rem);
     font-weight: 700;
     line-height: 1.05;
     display: flex;
     align-items: center;
-    min-height: 3.15rem;
+    min-height: 2.8rem;
     justify-content: center;
     text-align: center;
     color: var(--color-primary);
@@ -418,41 +418,96 @@
   }
 
   .attendee-brand-status {
-    margin-top: -0.15rem;
-    margin-bottom: 0.9rem;
-    text-align: center;
-  }
+      margin-top: -0.15rem;
+      margin-bottom: 0.55rem;
+      text-align: center;
+    }
+
+  .sponsor-strip {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(5.75rem, 6.75rem);
+      justify-content: center;
+      gap: 0.45rem;
+      overflow-x: auto;
+      padding: 0 0 0.2rem;
+      margin-bottom: 0.55rem;
+      scrollbar-width: thin;
+    }
+
+  .sponsor-strip-card {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 3rem;
+      padding: 0.35rem 0.5rem;
+      border-radius: 0.9rem;
+      border: 1px solid color-mix(in srgb, var(--color-primary) 10%, transparent);
+      background: color-mix(in srgb, var(--color-background) 94%, white);
+    }
+
+  .sponsor-strip-image {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 0.55rem;
+      object-fit: cover;
+    }
 
   .board-layout {
-    display: grid;
-    gap: 0.6rem;
-    padding-bottom: 0.25rem;
-  }
+      display: grid;
+      gap: 0.45rem;
+      padding-bottom: 0.25rem;
+    }
 
   .board-header {
-    display: grid;
-    gap: 0.28rem;
-    text-align: center;
-  }
+      display: grid;
+      gap: 0.18rem;
+      text-align: center;
+    }
 
   .board-subtitle {
-    margin: 0;
-    font-size: 0.93rem;
-    line-height: 1.4;
-    color: color-mix(in srgb, var(--color-text) 90%, var(--color-primary));
-  }
+      margin: 0;
+      font-size: 0.88rem;
+      line-height: 1.32;
+      color: color-mix(in srgb, var(--color-text) 90%, var(--color-primary));
+    }
 
   .board-return-note {
-    padding: 0.75rem 0.9rem;
-    border-radius: 1rem;
-    background: color-mix(in srgb, var(--color-secondary) 10%, var(--color-background));
-    border: 1px solid color-mix(in srgb, var(--color-secondary) 14%, transparent);
-  }
+      padding: 0.58rem 0.72rem;
+      border-radius: 1rem;
+      background: color-mix(in srgb, var(--color-secondary) 10%, var(--color-background));
+      border: 1px solid color-mix(in srgb, var(--color-secondary) 14%, transparent);
+      opacity: 1;
+      max-height: 6rem;
+      overflow: hidden;
+      transition:
+        opacity 260ms ease,
+        transform 260ms ease,
+        max-height 260ms ease,
+        margin 260ms ease,
+        padding 260ms ease;
+    }
+
+  .board-return-note-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+  .board-return-note-hidden {
+      opacity: 0;
+      transform: translateY(-0.2rem);
+      max-height: 0;
+      margin: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      border-width: 0;
+    }
 
   .board-progress {
-    display: grid;
-    gap: 0.35rem;
-    padding: 0.58rem 0.72rem;
+      display: grid;
+      gap: 0.24rem;
+      padding: 0.45rem 0.65rem;
     border-radius: 1rem;
     background: color-mix(in srgb, var(--color-background) 88%, white);
     border: 1px solid color-mix(in srgb, var(--color-primary) 10%, transparent);
@@ -463,7 +518,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+      gap: 0.55rem;
   }
 
   .board-progress-stack {
@@ -474,7 +529,7 @@
   .board-progress-value {
     margin: 0;
     font-family: var(--font-heading);
-    font-size: 0.95rem;
+      font-size: 0.9rem;
     font-weight: 700;
     color: var(--color-primary);
   }
@@ -483,9 +538,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 3rem;
-    min-height: 2rem;
-    padding: 0.25rem 0.6rem;
+      min-width: 2.7rem;
+      min-height: 1.75rem;
+      padding: 0.18rem 0.5rem;
     border-radius: 999px;
     background: color-mix(in srgb, var(--color-secondary) 14%, var(--color-background));
     color: var(--color-secondary);
@@ -496,12 +551,12 @@
   }
 
   .board-progress-bar {
-    width: 100%;
-    height: 0.55rem;
-    overflow: hidden;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--color-primary) 10%, var(--color-background));
-  }
+      width: 100%;
+      height: 0.42rem;
+      overflow: hidden;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--color-primary) 10%, var(--color-background));
+    }
 
   .board-progress-fill {
     display: block;
@@ -512,24 +567,27 @@
   }
 
   .board-grid {
-    display: grid;
-    gap: 0.38rem;
-    align-items: stretch;
-  }
+      display: grid;
+      gap: 0.34rem;
+      grid-auto-rows: 1fr;
+      align-items: stretch;
+    }
 
   .board-square {
-    aspect-ratio: 1 / 1;
-    min-height: 4.45rem;
-    border-radius: 0.8rem;
-    border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
-    background: color-mix(in srgb, var(--color-background) 92%, white);
-    color: var(--color-text);
-    padding: 0.24rem;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: space-between;
-    text-align: left;
+      aspect-ratio: 1 / 1;
+      min-width: 0;
+      border-radius: 0.8rem;
+      border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+      background: color-mix(in srgb, var(--color-background) 92%, white);
+      color: var(--color-text);
+      padding: 0.34rem;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      align-items: start;
+      align-content: stretch;
+      justify-items: stretch;
+      overflow: hidden;
+      text-align: left;
     cursor: pointer;
     transition:
       transform 110ms ease,
@@ -573,24 +631,25 @@
   }
 
   .board-square-topline {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.3rem;
-    min-height: 1.25rem;
-  }
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.3rem;
+      min-height: 1rem;
+      margin-bottom: 0.22rem;
+    }
 
   .board-square-number {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.1rem;
-    height: 1.1rem;
+      width: 1rem;
+      height: 1rem;
     border-radius: 999px;
     background: color-mix(in srgb, var(--color-primary) 10%, var(--color-background));
     color: color-mix(in srgb, var(--color-primary) 86%, var(--color-text));
     font-family: var(--font-heading);
-    font-size: 0.58rem;
+      font-size: 0.55rem;
     font-weight: 700;
     line-height: 1;
   }
@@ -599,35 +658,39 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.1rem;
-    height: 1.1rem;
+      width: 0.95rem;
+      height: 0.95rem;
     border-radius: 999px;
     background: color-mix(in srgb, var(--color-secondary) 24%, white);
     color: var(--color-secondary);
     font-family: var(--font-heading);
-    font-size: 0.7rem;
+      font-size: 0.62rem;
     font-weight: 800;
     line-height: 1;
     box-shadow: inset 0 1px 0 color-mix(in srgb, white 54%, transparent);
   }
 
   .square-label {
-    display: block;
-    flex: 1;
-    min-height: 1.2em;
-    max-height: 1.2em;
-    margin: 0.18rem 0 0;
-    font-family: var(--font-heading);
-    font-size: clamp(0.64rem, 1.82vw, 0.77rem);
-    font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: 0.01em;
-    color: var(--color-primary);
-    text-align: center;
-    text-transform: uppercase;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+      display: block;
+      min-height: 2.24em;
+      max-height: 2.24em;
+      margin: 0;
+      align-self: center;
+      font-family: var(--font-heading);
+      font-size: clamp(0.63rem, 1.68vw, 0.74rem);
+      font-weight: 700;
+      line-height: 1.12;
+      letter-spacing: 0.01em;
+      color: var(--color-primary);
+      text-align: center;
+      text-transform: uppercase;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      white-space: normal;
+      word-break: break-word;
   }
 
   .board-cta-wrap {
@@ -1061,47 +1124,42 @@
     }
 
     .board-layout {
-      gap: 0.8rem;
+      gap: 0.6rem;
     }
 
     .board-grid {
-      gap: 0.48rem;
+      gap: 0.42rem;
     }
 
     .board-square {
-      min-height: 4.85rem;
       padding: 0.28rem;
     }
 
     .attendee-brand-header {
-      margin-bottom: 1.1rem;
+      margin-bottom: 0.75rem;
     }
 
     .attendee-brand-logo {
-      width: 3.5rem;
+      width: 3.05rem;
     }
 
     .attendee-brand-event {
-      min-height: 3.5rem;
+      min-height: 3rem;
       padding-top: 0.2rem;
-      padding-bottom: 0.46rem;
+      padding-bottom: 0.32rem;
     }
 
     .square-label {
-      min-height: 1.2em;
-      max-height: 1.2em;
-      font-size: clamp(0.67rem, 1.9vw, 0.8rem);
-      line-height: 1.2;
+      min-height: 2.24em;
+      max-height: 2.24em;
+      font-size: clamp(0.66rem, 1.82vw, 0.77rem);
+      line-height: 1.12;
     }
   }
 
   @media (min-width: 430px) {
     .board-grid {
       gap: 0.55rem;
-    }
-
-    .board-square {
-      min-height: 5.35rem;
     }
   }
 

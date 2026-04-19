@@ -21,6 +21,11 @@ import { launchCompletionConfetti } from "../lib/celebration";
 
 type AppView = "entry" | "onboarding" | "board" | "completed";
 const capmaLogoSrc = "/capma-logo.png";
+const sponsorLogos = [
+  { alt: "Sponsor 1", src: "https://picsum.photos/seed/1/120/60" },
+  { alt: "Sponsor 2", src: "https://picsum.photos/seed/2/120/60" },
+  { alt: "Sponsor 3", src: "https://picsum.photos/seed/3/120/60" },
+];
 
 function getOnboardingStorageKey(eventId: string, email: string) {
   return `capma-bingo-onboarding-seen:${eventId}:${email.trim().toLowerCase()}`;
@@ -82,8 +87,25 @@ export default function AttendeePage() {
   const [boardSaving, setBoardSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
+  const [restoreMessageVisible, setRestoreMessageVisible] = useState(false);
   const completionCelebratedRef = useRef(false);
   const initializedRef = useRef(false);
+
+  useEffect(() => {
+    if (!restoreMessage) {
+      setRestoreMessageVisible(false);
+      return;
+    }
+
+    setRestoreMessageVisible(true);
+    const hideTimer = window.setTimeout(() => {
+      setRestoreMessageVisible(false);
+    }, 8500);
+
+    return () => {
+      window.clearTimeout(hideTimer);
+    };
+  }, [restoreMessage]);
 
   useEffect(() => {
     if (!authReady || initializedRef.current) {
@@ -102,6 +124,7 @@ export default function AttendeePage() {
       setLoading(true);
       setError(null);
       setRestoreMessage(null);
+      setRestoreMessageVisible(false);
 
       try {
         const activeEvent = await loadActiveEvent();
@@ -188,6 +211,7 @@ export default function AttendeePage() {
     setEntrySubmitting(true);
     setError(null);
     setRestoreMessage(null);
+    setRestoreMessageVisible(false);
 
     try {
       const loadedEntry = await createOrLoadEntry(event.eventId, values);
@@ -399,18 +423,36 @@ export default function AttendeePage() {
         ) : null}
 
         {view === "board" ? (
-          <BingoBoard
-            boardSize={event.boardSize}
-            eventName={event.name}
-            isReadyToSubmit={isReadyToSubmit}
-            isLocked={isLocked}
-            isSaving={boardSaving}
-            markedSquareIds={markedSquareIds}
-            onSubmitCompletedBoard={handleSubmitCompletedBoard}
-            onToggleSquare={handleSquareToggle}
-            restoreMessage={restoreMessage}
-            squares={orderedSquares}
-          />
+          <>
+            <div aria-label="Sponsors" className="sponsor-strip" role="region">
+              {sponsorLogos.map((logo) => (
+                <div className="sponsor-strip-card" key={logo.src}>
+                  <img
+                    alt={logo.alt}
+                    className="sponsor-strip-image"
+                    height="60"
+                    loading="lazy"
+                    src={logo.src}
+                    width="120"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <BingoBoard
+              boardSize={event.boardSize}
+              eventName={event.name}
+              isReadyToSubmit={isReadyToSubmit}
+              isLocked={isLocked}
+              isSaving={boardSaving}
+              markedSquareIds={markedSquareIds}
+              onSubmitCompletedBoard={handleSubmitCompletedBoard}
+              onToggleSquare={handleSquareToggle}
+              restoreMessage={restoreMessage}
+              restoreMessageVisible={restoreMessageVisible}
+              squares={orderedSquares}
+            />
+          </>
         ) : null}
 
         {view === "completed" ? (

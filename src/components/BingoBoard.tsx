@@ -12,6 +12,7 @@ type BingoBoardProps = {
   onSubmitCompletedBoard: () => Promise<void>;
   onToggleSquare: (square: EventSquare) => Promise<void>;
   restoreMessage?: string | null;
+  restoreMessageVisible?: boolean;
   squares: EventSquare[];
 };
 
@@ -25,6 +26,7 @@ export default function BingoBoard({
   onSubmitCompletedBoard,
   onToggleSquare,
   restoreMessage,
+  restoreMessageVisible = false,
   squares,
 }: BingoBoardProps) {
   const detailTitleId = useId();
@@ -103,7 +105,19 @@ export default function BingoBoard({
         <p className="board-subtitle">
           Tap any square to read the details and mark it complete when you spot it.
         </p>
-        {restoreMessage ? <p className="status-note board-return-note">{restoreMessage}</p> : null}
+        {restoreMessage ? (
+          <p
+            className={[
+              "status-note",
+              "board-return-note",
+              restoreMessageVisible ? "board-return-note-visible" : "board-return-note-hidden",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {restoreMessage}
+          </p>
+        ) : null}
         <div className="board-progress">
           <div className="board-progress-copy">
             <div className="board-progress-stack">
