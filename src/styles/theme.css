@@ -97,6 +97,27 @@
     color: var(--color-text);
   }
 
+  .prelaunch-card {
+    display: grid;
+    gap: 0.85rem;
+    text-align: center;
+  }
+
+  .prelaunch-copy {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .prelaunch-actions {
+    display: flex;
+    justify-content: center;
+    padding-top: 0.1rem;
+  }
+
+  .prelaunch-link {
+    text-decoration: none;
+  }
+
   .status-message,
   .status-note {
     margin: 0;

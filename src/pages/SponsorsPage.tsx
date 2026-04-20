@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import SponsorBoard from "../components/SponsorBoard";
 import { loadActiveEvent } from "../features/event/event.api";
 import type { EventConfig } from "../features/event/event.types";
@@ -119,9 +118,6 @@ export default function SponsorsPage() {
               <p className="status-note sponsor-page-mode">Sponsor-facing board</p>
             </div>
           </div>
-          <Link className="admin-link sponsor-page-back" to="/">
-            Attendee View
-          </Link>
         </header>
 
         {error ? <p className="attendee-brand-status status-message">{error}</p> : null}

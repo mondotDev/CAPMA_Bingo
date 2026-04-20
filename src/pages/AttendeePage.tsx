@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import BingoBoard from "../components/BingoBoard";
 import CompletionScreen from "../components/CompletionScreen";
 import EntryForm from "../components/EntryForm";
 import OnboardingScreen from "../components/OnboardingScreen";
+import { ATTENDEE_BINGO_OPEN_LABEL, isAttendeeBingoOpen } from "../config/appTiming";
 import { useAppAuth } from "../features/auth/appAuth";
 import { loadActiveEvent } from "../features/event/event.api";
 import type { EventConfig, EventSquare } from "../features/event/event.types";
@@ -18,6 +20,7 @@ import type {
   EntrySaveResult,
 } from "../features/entry/entry.types";
 import { launchCompletionConfetti } from "../lib/celebration";
+import { getCurrentTime } from "../lib/appTime";
 
 type AppView = "entry" | "onboarding" | "board" | "completed";
 const capmaLogoSrc = "/capma-logo.png";
@@ -88,8 +91,24 @@ export default function AttendeePage() {
   const [error, setError] = useState<string | null>(null);
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
   const [restoreMessageVisible, setRestoreMessageVisible] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => getCurrentTime());
   const completionCelebratedRef = useRef(false);
-  const initializedRef = useRef(false);
+
+  const attendeeAccessOpen = useMemo(() => isAttendeeBingoOpen(currentTime), [currentTime]);
+
+  useEffect(() => {
+    if (attendeeAccessOpen) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setCurrentTime(getCurrentTime());
+    }, 30_000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [attendeeAccessOpen]);
 
   useEffect(() => {
     if (!restoreMessage) {
@@ -108,7 +127,7 @@ export default function AttendeePage() {
   }, [restoreMessage]);
 
   useEffect(() => {
-    if (!authReady || initializedRef.current) {
+    if (!authReady) {
       return;
     }
 
@@ -116,8 +135,6 @@ export default function AttendeePage() {
       setLoading(false);
       return;
     }
-
-    initializedRef.current = true;
     let cancelled = false;
 
     async function initialize() {
@@ -125,6 +142,16 @@ export default function AttendeePage() {
       setError(null);
       setRestoreMessage(null);
       setRestoreMessageVisible(false);
+
+      if (!attendeeAccessOpen) {
+        applyTheme(null);
+        setEvent(null);
+        setEntry(null);
+        setMarkedSquareIds([]);
+        setView("entry");
+        setLoading(false);
+        return;
+      }
 
       try {
         const activeEvent = await loadActiveEvent();
@@ -188,7 +215,7 @@ export default function AttendeePage() {
     return () => {
       cancelled = true;
     };
-  }, [authError, authReady]);
+  }, [attendeeAccessOpen, authError, authReady]);
 
   const orderedSquares = useMemo(() => {
     return [...(event?.squares ?? [])].sort((a, b) => a.order - b.order);
@@ -200,8 +227,10 @@ export default function AttendeePage() {
     !isLocked && totalSquares > 0 && markedSquareIds.length === totalSquares;
 
   useEffect(() => {
-    document.title = event?.name ? `CAPMA Bingo | ${event.name}` : "CAPMA Bingo";
-  }, [event?.name]);
+    document.title = attendeeAccessOpen
+      ? (event?.name ? `CAPMA Bingo | ${event.name}` : "CAPMA Bingo")
+      : "CAPMA Bingo | Coming Soon";
+  }, [attendeeAccessOpen, event?.name]);
 
   async function handleEntrySubmit(values: EntryFormValues) {
     if (!event || !authReady) {
@@ -375,6 +404,30 @@ export default function AttendeePage() {
   }
 
   if (!event) {
+    if (!attendeeAccessOpen) {
+      return (
+        <main className="app-shell">
+          <section className="surface-card prelaunch-card">
+            <p className="eyebrow">Coming Soon</p>
+            <h1 className="display-title">CAPMA Bingo</h1>
+            <div className="prelaunch-copy">
+              <p className="body-copy">
+                Best Pest Expo bingo opens {ATTENDEE_BINGO_OPEN_LABEL}.
+              </p>
+              <p className="body-copy">
+                Sponsor placements are available to view now.
+              </p>
+            </div>
+            <div className="prelaunch-actions">
+              <Link className="button-primary prelaunch-link" to="/sponsors">
+                View Sponsor Placements
+              </Link>
+            </div>
+          </section>
+        </main>
+      );
+    }
+
     return (
       <main className="app-shell">
         <section className="surface-card">
