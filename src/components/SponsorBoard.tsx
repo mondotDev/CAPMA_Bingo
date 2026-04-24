@@ -12,7 +12,7 @@ function buildSponsorMailto(eventName: string, square: EventSquare) {
     [
       "Hello CAPMA,",
       "",
-      `I would like to ask about sponsor availability for:`,
+      "I would like to ask about sponsor availability for:",
       `Event: ${eventName}`,
       `Tile: ${square.order}`,
       `Title: ${square.label}`,
@@ -30,6 +30,10 @@ function getSponsorStatus(square: EventSquare) {
 
 function getSponsorPopupTitle(square: EventSquare) {
   const sponsorStatus = getSponsorStatus(square);
+
+  if (sponsorStatus === "claimed") {
+    return square.sponsorClaimedBy?.trim() || square.label;
+  }
 
   if (sponsorStatus === "unavailable") {
     return "Spot Unavailable";
@@ -228,8 +232,12 @@ export default function SponsorBoard({ eventName, squares }: SponsorBoardProps) 
             <div className="board-square-sheet-grabber" />
             <div className="board-square-sheet-header">
               <div className="board-square-sheet-title-wrap">
-                <p className="eyebrow">Sponsor Spot</p>
-                <p className="sponsor-board-tile-id">Tile {expandedSquare.order}</p>
+                <p className="eyebrow">
+                  {getSponsorStatus(expandedSquare) === "claimed" ? "Sponsor" : "Sponsor Spot"}
+                </p>
+                {getSponsorStatus(expandedSquare) !== "claimed" ? (
+                  <p className="sponsor-board-tile-id">Tile {expandedSquare.order}</p>
+                ) : null}
                 <h3 className="board-square-sheet-title sponsor-board-sheet-title" id={detailTitleId}>
                   {getSponsorPopupTitle(expandedSquare)}
                 </h3>
@@ -241,25 +249,11 @@ export default function SponsorBoard({ eventName, squares }: SponsorBoardProps) 
                   `sponsor-board-sheet-status-${getSponsorStatus(expandedSquare)}`,
                 ].join(" ")}
               >
-                {getSponsorStatus(expandedSquare)}
+                {getSponsorStatus(expandedSquare) === "claimed"
+                  ? "Sponsored"
+                  : getSponsorStatus(expandedSquare)}
               </span>
             </div>
-
-            <p className="status-note sponsor-board-sheet-note">
-              Attendees tap these tiles to complete their board—this puts your brand in front of them.
-            </p>
-
-            <ul className="sponsor-board-sheet-list">
-              <li>Your logo appears in the tile popup</li>
-              <li>Add a short message or call-to-action</li>
-              <li>Directs attendees to your booth</li>
-            </ul>
-
-            {getSponsorStatus(expandedSquare) === "claimed" && expandedSquare.sponsorClaimedBy ? (
-              <p className="status-note sponsor-board-claimed-by">
-                Claimed by {expandedSquare.sponsorClaimedBy}
-              </p>
-            ) : null}
 
             {getSponsorStatus(expandedSquare) === "claimed" && expandedSquare.logoUrl ? (
               <img
@@ -268,6 +262,29 @@ export default function SponsorBoard({ eventName, squares }: SponsorBoardProps) 
                 src={expandedSquare.logoUrl}
               />
             ) : null}
+
+            {getSponsorStatus(expandedSquare) === "claimed" ? (
+              <>
+                <p className="status-note sponsor-board-sheet-note sponsor-board-claimed-attribution">
+                  This is a live sponsor placement on the Expo board.
+                </p>
+                <p className="status-note sponsor-board-claimed-copy">
+                  Sponsor squares include logo visibility and a dedicated message shown to attendees during the event.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="status-note sponsor-board-sheet-note">
+                  Attendees tap these tiles to complete their board—this puts your brand in front of them.
+                </p>
+
+                <ul className="sponsor-board-sheet-list">
+                  <li>Your logo appears in the tile popup</li>
+                  <li>Add a short message or call-to-action</li>
+                  <li>Directs attendees to your booth</li>
+                </ul>
+              </>
+            )}
 
             {getSponsorStatus(expandedSquare) === "held" ? (
               <p className="status-note sponsor-board-held-note">
