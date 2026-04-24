@@ -4,8 +4,13 @@ import BingoBoard from "../components/BingoBoard";
 import CompletionScreen from "../components/CompletionScreen";
 import EntryForm from "../components/EntryForm";
 import OnboardingScreen from "../components/OnboardingScreen";
-import { ATTENDEE_BINGO_OPEN_LABEL, isAttendeeBingoOpen } from "../config/appTiming";
-import { useAppAuth } from "../features/auth/appAuth";
+import {
+  ATTENDEE_BINGO_OPEN_LABEL,
+  isAttendeeBingoAccessible,
+  isAttendeeBingoOpen,
+  isStaffPreviewAllowed,
+} from "../config/appTiming";
+import { signInStaffPreviewWithGoogle, useAppAuth } from "../features/auth/appAuth";
 import { loadActiveEvent } from "../features/event/event.api";
 import type { EventConfig, EventSquare } from "../features/event/event.types";
 import {
@@ -80,7 +85,7 @@ function getDisplayEventName(eventName: string) {
 }
 
 export default function AttendeePage() {
-  const { authReady, authError } = useAppAuth();
+  const { authReady, authError, user } = useAppAuth();
   const [view, setView] = useState<AppView>("entry");
   const [event, setEvent] = useState<EventConfig | null>(null);
   const [entry, setEntry] = useState<EntryRecord | null>(null);
@@ -89,15 +94,38 @@ export default function AttendeePage() {
   const [entrySubmitting, setEntrySubmitting] = useState(false);
   const [boardSaving, setBoardSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewSubmitting, setPreviewSubmitting] = useState(false);
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
   const [restoreMessageVisible, setRestoreMessageVisible] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => getCurrentTime());
   const completionCelebratedRef = useRef(false);
 
-  const attendeeAccessOpen = useMemo(() => isAttendeeBingoOpen(currentTime), [currentTime]);
+  const previewEmail = useMemo(() => user?.email?.trim().toLowerCase() || null, [user?.email]);
+  const publicAccessOpen = useMemo(() => isAttendeeBingoOpen(currentTime), [currentTime]);
+  const staffPreviewActive = useMemo(
+    () => !publicAccessOpen && isStaffPreviewAllowed(previewEmail),
+    [publicAccessOpen, previewEmail],
+  );
+  const attendeeAccessOpen = useMemo(
+    () => isAttendeeBingoAccessible(currentTime, previewEmail),
+    [currentTime, previewEmail],
+  );
 
   useEffect(() => {
-    if (attendeeAccessOpen) {
+    console.info("[attendee-access] auth state", {
+      email: previewEmail,
+      isAnonymous: user?.isAnonymous ?? null,
+      publicAccessOpen,
+      staffPreviewAllowed: isStaffPreviewAllowed(previewEmail),
+      attendeeAccessOpen,
+      currentTimeIso: currentTime.toISOString(),
+      openTime: ATTENDEE_BINGO_OPEN_LABEL,
+    });
+  }, [attendeeAccessOpen, currentTime, previewEmail, publicAccessOpen, user?.isAnonymous]);
+
+  useEffect(() => {
+    if (publicAccessOpen) {
       return;
     }
 
@@ -108,7 +136,7 @@ export default function AttendeePage() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [attendeeAccessOpen]);
+  }, [publicAccessOpen]);
 
   useEffect(() => {
     if (!restoreMessage) {
@@ -140,6 +168,7 @@ export default function AttendeePage() {
     async function initialize() {
       setLoading(true);
       setError(null);
+      setPreviewError(null);
       setRestoreMessage(null);
       setRestoreMessageVisible(false);
 
@@ -215,7 +244,7 @@ export default function AttendeePage() {
     return () => {
       cancelled = true;
     };
-  }, [attendeeAccessOpen, authError, authReady]);
+  }, [attendeeAccessOpen, authError, authReady, previewEmail]);
 
   const orderedSquares = useMemo(() => {
     return [...(event?.squares ?? [])].sort((a, b) => a.order - b.order);
@@ -263,6 +292,27 @@ export default function AttendeePage() {
       );
     } finally {
       setEntrySubmitting(false);
+    }
+  }
+
+  async function handleStaffPreviewSignIn() {
+    setPreviewSubmitting(true);
+    setPreviewError(null);
+
+    try {
+      const previewUser = await signInStaffPreviewWithGoogle();
+
+      if (!isStaffPreviewAllowed(previewUser.email)) {
+        setPreviewError("This preview is only available to authorized CAPMA staff.");
+      }
+    } catch (signInError) {
+      setPreviewError(
+        signInError instanceof Error
+          ? signInError.message
+          : "CAPMA staff preview sign-in was not completed.",
+      );
+    } finally {
+      setPreviewSubmitting(false);
     }
   }
 
@@ -418,7 +468,16 @@ export default function AttendeePage() {
                 Sponsor placements are available to view now.
               </p>
             </div>
+            {previewError ? <p className="status-message">{previewError}</p> : null}
             <div className="prelaunch-actions">
+              <button
+                className="button-primary"
+                disabled={previewSubmitting}
+                onClick={() => void handleStaffPreviewSignIn()}
+                type="button"
+              >
+                {previewSubmitting ? "Signing In..." : "CAPMA Staff Preview"}
+              </button>
               <Link className="button-primary prelaunch-link" to="/sponsors">
                 View Sponsor Placements
               </Link>
@@ -457,6 +516,9 @@ export default function AttendeePage() {
           </div>
         </header>
 
+        {staffPreviewActive ? (
+          <p className="attendee-brand-status status-note">Staff preview mode</p>
+        ) : null}
         {error ? <p className="attendee-brand-status status-message">{error}</p> : null}
 
         {view === "entry" ? (

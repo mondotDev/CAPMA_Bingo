@@ -7,8 +7,10 @@ import {
   type ReactNode,
 } from "react";
 import {
+  GoogleAuthProvider,
   onAuthStateChanged,
   signInAnonymously,
+  signInWithPopup,
   type User,
 } from "firebase/auth";
 import { auth } from "../../lib/firebase";
@@ -20,6 +22,17 @@ type AppAuthContextValue = {
 };
 
 const AppAuthContext = createContext<AppAuthContextValue | null>(null);
+
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({
+  prompt: "select_account",
+  hd: "capma.org",
+});
+
+export async function signInStaffPreviewWithGoogle() {
+  const result = await signInWithPopup(auth, googleProvider);
+  return result.user;
+}
 
 export function AppAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
