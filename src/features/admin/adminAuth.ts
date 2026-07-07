@@ -46,8 +46,12 @@ export async function signInAdminWithGoogle() {
   const adminAllowed = await hasAdminRecord(result.user);
 
   if (!adminAllowed) {
-    await signOut(auth);
-    throw new Error("Your CAPMA account is not authorized for admin access.");
+    const email = result.user.email?.trim() || "this Google account";
+
+    throw new Error(
+      `Signed in as ${email}, but no admin allowlist record exists yet. ` +
+        `Create a Firestore document at admins/${result.user.uid}, then try again.`,
+    );
   }
 
   return result.user;
