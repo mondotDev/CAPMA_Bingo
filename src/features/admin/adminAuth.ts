@@ -13,12 +13,15 @@ import { db } from "../../lib/firebase";
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
   prompt: "select_account",
-  hd: "capma.org",
 });
+
+const ADMIN_EMAIL_DOMAINS = ["capma.org", "connerlyandassociates.com"];
 
 export function isCapmaAdminUser(user: User | null) {
   const email = user?.email?.trim().toLowerCase();
-  return Boolean(email && email.endsWith("@capma.org"));
+  return Boolean(
+    email && ADMIN_EMAIL_DOMAINS.some((domain) => email.endsWith(`@${domain}`)),
+  );
 }
 
 async function hasAdminRecord(user: User) {
@@ -27,11 +30,17 @@ async function hasAdminRecord(user: User) {
 }
 
 export async function signInAdminWithGoogle() {
+  if (auth.currentUser?.isAnonymous) {
+    await signOut(auth);
+  }
+
   const result = await signInWithPopup(auth, googleProvider);
 
   if (!isCapmaAdminUser(result.user)) {
     await signOut(auth);
-    throw new Error("Use a @capma.org Google account to access CAPMA admin.");
+    throw new Error(
+      "Use a CAPMA or Connerly & Associates Google account to access CAPMA admin.",
+    );
   }
 
   const adminAllowed = await hasAdminRecord(result.user);
@@ -53,7 +62,7 @@ export function useAdminAuth() {
     const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
       setUser(nextUser);
 
-       if (!nextUser || !isCapmaAdminUser(nextUser)) {
+      if (!nextUser || !isCapmaAdminUser(nextUser)) {
         setIsAdmin(false);
         setLoading(false);
         return;

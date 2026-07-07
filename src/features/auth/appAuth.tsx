@@ -11,6 +11,7 @@ import {
   onAuthStateChanged,
   signInAnonymously,
   signInWithPopup,
+  signOut,
   type User,
 } from "firebase/auth";
 import { auth } from "../../lib/firebase";
@@ -41,8 +42,25 @@ export function AppAuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
+      const isAdminRoute = window.location.pathname.startsWith("/admin");
+
+      if (nextUser?.isAnonymous && isAdminRoute) {
+        await signOut(auth);
+        setUser(null);
+        setAuthReady(true);
+        setAuthError(null);
+        return;
+      }
+
       if (nextUser) {
         setUser(nextUser);
+        setAuthReady(true);
+        setAuthError(null);
+        return;
+      }
+
+      if (isAdminRoute) {
+        setUser(null);
         setAuthReady(true);
         setAuthError(null);
         return;

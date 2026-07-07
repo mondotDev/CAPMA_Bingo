@@ -56,9 +56,11 @@ export default function AdminLoginPage() {
           <p className="eyebrow">CAPMA Admin</p>
           <h1 className="section-title">CAPMA Admin Login</h1>
           <p className="body-copy">
-            Sign in with your CAPMA Google account to view admin dashboard data.
+            Sign in with an authorized Google account to view admin dashboard data.
           </p>
-          <p className="status-note">CAPMA email addresses only.</p>
+          <p className="status-note">
+            CAPMA or Connerly &amp; Associates email addresses only.
+          </p>
         </div>
 
         {error ? <p className="status-message">{error}</p> : null}
