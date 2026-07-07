@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import {
+  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithPopup,
+  signInWithRedirect,
   signOut,
   type User,
 } from "firebase/auth";
@@ -50,6 +51,22 @@ async function requireAdminAccess(user: User) {
   return user;
 }
 
+export async function completeAdminGoogleRedirectSignIn() {
+  await auth.authStateReady();
+
+  const result = await getRedirectResult(auth);
+
+  if (result?.user) {
+    return requireAdminAccess(result.user);
+  }
+
+  if (auth.currentUser && !auth.currentUser.isAnonymous) {
+    return requireAdminAccess(auth.currentUser);
+  }
+
+  return null;
+}
+
 export async function signInAdminWithGoogle() {
   await auth.authStateReady();
 
@@ -58,8 +75,8 @@ export async function signInAdminWithGoogle() {
     await auth.authStateReady();
   }
 
-  const result = await signInWithPopup(auth, googleProvider);
-  return requireAdminAccess(result.user);
+  await signInWithRedirect(auth, googleProvider);
+  return null;
 }
 
 export function useAdminAuth() {
