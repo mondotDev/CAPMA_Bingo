@@ -29,32 +29,39 @@ async function hasAdminRecord(user: User) {
   return adminSnapshot.exists();
 }
 
-export async function signInAdminWithGoogle() {
-  if (auth.currentUser?.isAnonymous) {
-    await signOut(auth);
-  }
-
-  const result = await signInWithPopup(auth, googleProvider);
-
-  if (!isCapmaAdminUser(result.user)) {
+async function requireAdminAccess(user: User) {
+  if (!isCapmaAdminUser(user)) {
     await signOut(auth);
     throw new Error(
       "Use a CAPMA or Connerly & Associates Google account to access CAPMA admin.",
     );
   }
 
-  const adminAllowed = await hasAdminRecord(result.user);
+  const adminAllowed = await hasAdminRecord(user);
 
   if (!adminAllowed) {
-    const email = result.user.email?.trim() || "this Google account";
+    const email = user.email?.trim() || "this Google account";
 
     throw new Error(
       `Signed in as ${email}, but no admin allowlist record exists yet. ` +
-        `Create a Firestore document at admins/${result.user.uid}, then try again.`,
+        `Create a Firestore document at admins/${user.uid}, then try again.`,
     );
   }
 
-  return result.user;
+  return user;
+}
+
+export async function signInAdminWithGoogle() {
+  if (auth.currentUser && !auth.currentUser.isAnonymous) {
+    return requireAdminAccess(auth.currentUser);
+  }
+
+  if (auth.currentUser?.isAnonymous) {
+    await signOut(auth);
+  }
+
+  const result = await signInWithPopup(auth, googleProvider);
+  return requireAdminAccess(result.user);
 }
 
 export function useAdminAuth() {
