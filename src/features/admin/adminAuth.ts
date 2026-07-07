@@ -16,8 +16,6 @@ googleProvider.setCustomParameters({
 });
 
 const ADMIN_EMAIL_DOMAINS = ["capma.org", "connerlyandassociates.com"];
-const PROVIDER_ALREADY_LINKED_ERROR = "auth/provider-already-linked";
-
 export function isCapmaAdminUser(user: User | null) {
   const email = user?.email?.trim().toLowerCase();
   return Boolean(
@@ -28,15 +26,6 @@ export function isCapmaAdminUser(user: User | null) {
 async function hasAdminRecord(user: User) {
   const adminSnapshot = await getDoc(doc(db, "admins", user.uid));
   return adminSnapshot.exists();
-}
-
-function isFirebaseAuthError(error: unknown, code: string) {
-  return (
-    typeof error === "object"
-    && error !== null
-    && "code" in error
-    && (error as { code?: unknown }).code === code
-  );
 }
 
 async function requireAdminAccess(user: User) {
@@ -64,30 +53,13 @@ async function requireAdminAccess(user: User) {
 export async function signInAdminWithGoogle() {
   await auth.authStateReady();
 
-  if (auth.currentUser && !auth.currentUser.isAnonymous) {
-    return requireAdminAccess(auth.currentUser);
-  }
-
-  if (auth.currentUser?.isAnonymous) {
+  if (auth.currentUser) {
     await signOut(auth);
-  }
-
-  try {
-    const result = await signInWithPopup(auth, googleProvider);
-    return requireAdminAccess(result.user);
-  } catch (error) {
     await auth.authStateReady();
-
-    if (
-      isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)
-      && auth.currentUser
-      && !auth.currentUser.isAnonymous
-    ) {
-      return requireAdminAccess(auth.currentUser);
-    }
-
-    throw error;
   }
+
+  const result = await signInWithPopup(auth, googleProvider);
+  return requireAdminAccess(result.user);
 }
 
 export function useAdminAuth() {
