@@ -16,23 +16,20 @@ const GOOGLE_IDENTITY_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
 const PROVIDER_ALREADY_LINKED_ERROR = "auth/provider-already-linked";
 
 type GoogleTokenResponse = {
-  access_token?: string;
+  credential?: string;
   error?: string;
   error_description?: string;
 };
 
-type GoogleTokenClient = {
-  requestAccessToken: (options?: { prompt?: string }) => void;
-};
-
 type GoogleIdentityServices = {
   accounts?: {
-    oauth2?: {
-      initTokenClient: (config: {
+    id?: {
+      initialize: (config: {
         client_id: string;
         callback: (response: GoogleTokenResponse) => void;
-        scope: string;
-      }) => GoogleTokenClient;
+        auto_select?: boolean;
+      }) => void;
+      prompt: () => void;
     };
   };
 };
@@ -103,7 +100,7 @@ async function requireAdminAccess(user: User) {
 }
 
 function loadGoogleIdentityScript() {
-  if (window.google?.accounts?.oauth2) {
+  if (window.google?.accounts?.id) {
     return Promise.resolve();
   }
 
@@ -140,7 +137,7 @@ function loadGoogleIdentityScript() {
   return googleIdentityScriptReady;
 }
 
-async function getGoogleAccessToken() {
+async function getGoogleIdToken() {
   if (!GOOGLE_CLIENT_ID) {
     throw new Error(
       "Google sign-in is missing VITE_GOOGLE_CLIENT_ID. Add the Firebase Google provider Web client ID to .env.local, rebuild, and redeploy.",
@@ -149,16 +146,16 @@ async function getGoogleAccessToken() {
 
   await loadGoogleIdentityScript();
 
-  const oauth2 = window.google?.accounts?.oauth2;
+  const googleId = window.google?.accounts?.id;
 
-  if (!oauth2) {
+  if (!googleId) {
     throw new Error("Google sign-in did not initialize.");
   }
 
   return new Promise<string>((resolve, reject) => {
-    const tokenClient = oauth2.initTokenClient({
+    googleId.initialize({
       client_id: GOOGLE_CLIENT_ID,
-      scope: "openid email profile",
+      auto_select: false,
       callback: (response) => {
         if (response.error) {
           reject(
@@ -169,16 +166,16 @@ async function getGoogleAccessToken() {
           return;
         }
 
-        if (!response.access_token) {
-          reject(new Error("Google sign-in did not return an access token."));
+        if (!response.credential) {
+          reject(new Error("Google sign-in did not return an ID token."));
           return;
         }
 
-        resolve(response.access_token);
+        resolve(response.credential);
       },
     });
 
-    tokenClient.requestAccessToken({ prompt: "select_account" });
+    googleId.prompt();
   });
 }
 
@@ -190,8 +187,8 @@ export async function signInAdminWithGoogle() {
     await auth.authStateReady();
   }
 
-  const accessToken = await getGoogleAccessToken();
-  const credential = GoogleAuthProvider.credential(null, accessToken);
+  const idToken = await getGoogleIdToken();
+  const credential = GoogleAuthProvider.credential(idToken);
 
   try {
     const result = await signInWithCredential(auth, credential);
