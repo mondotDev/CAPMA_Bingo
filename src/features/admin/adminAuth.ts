@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import type { FirebaseError } from "firebase/app";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
+  signInWithCredential,
   signInWithPopup,
   signOut,
   type User,
@@ -37,6 +39,10 @@ function isFirebaseAuthError(error: unknown, code: string) {
     && "code" in error
     && (error as { code?: unknown }).code === code
   );
+}
+
+function toFirebaseError(error: unknown) {
+  return error as FirebaseError;
 }
 
 function getAuthErrorDetail(error: unknown) {
@@ -110,6 +116,13 @@ export async function signInAdminWithGoogle() {
     }
 
     if (isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)) {
+      const credential = GoogleAuthProvider.credentialFromError(toFirebaseError(error));
+
+      if (credential) {
+        const result = await signInWithCredential(auth, credential);
+        return requireAdminAccess(result.user);
+      }
+
       throw new Error(
         "Firebase says this Google provider is already linked, but it did not expose a reusable signed-in admin user."
           + getAuthErrorDetail(error),
