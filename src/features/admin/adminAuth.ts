@@ -17,6 +17,7 @@ const PROVIDER_ALREADY_LINKED_ERROR = "auth/provider-already-linked";
 const ADMIN_VERIFIED_EMAIL_KEY = "capma-admin-verified-email";
 
 type GoogleTokenResponse = {
+  access_token?: string;
   credential?: string;
   error?: string;
   error_description?: string;
@@ -24,13 +25,15 @@ type GoogleTokenResponse = {
 
 type GoogleIdentityServices = {
   accounts?: {
-    id?: {
-      initialize: (config: {
+    oauth2?: {
+      initTokenClient: (config: {
         client_id: string;
+        scope: string;
         callback: (response: GoogleTokenResponse) => void;
-        auto_select?: boolean;
-      }) => void;
-      prompt: () => void;
+        prompt?: string;
+      }) => {
+        requestAccessToken: () => void;
+      };
     };
   };
 };
@@ -212,7 +215,7 @@ async function requireAdminAccess(user: User, verifiedEmail?: string, idToken?: 
 }
 
 function loadGoogleIdentityScript() {
-  if (window.google?.accounts?.id) {
+  if (window.google?.accounts?.oauth2) {
     return Promise.resolve();
   }
 
@@ -249,7 +252,7 @@ function loadGoogleIdentityScript() {
   return googleIdentityScriptReady;
 }
 
-async function getGoogleIdToken() {
+async function getGoogleAccessToken() {
   if (!GOOGLE_CLIENT_ID) {
     throw new Error(
       "Google sign-in is missing VITE_GOOGLE_CLIENT_ID. Add the Firebase Google provider Web client ID to .env.local, rebuild, and redeploy.",
@@ -258,17 +261,35 @@ async function getGoogleIdToken() {
 
   await loadGoogleIdentityScript();
 
-  const googleId = window.google?.accounts?.id;
+  const googleOAuth = window.google?.accounts?.oauth2;
 
-  if (!googleId) {
+  if (!googleOAuth) {
     throw new Error("Google sign-in did not initialize.");
   }
 
   return new Promise<string>((resolve, reject) => {
-    googleId.initialize({
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      reject(new Error("Google sign-in did not finish. Close the Google popup if it is still open, then try again."));
+    }, 30000);
+
+    const tokenClient = googleOAuth.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
-      auto_select: false,
+      scope: "openid email profile",
+      prompt: "select_account",
       callback: (response) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        window.clearTimeout(timeoutId);
+
         if (response.error) {
           reject(
             new Error(
@@ -278,17 +299,35 @@ async function getGoogleIdToken() {
           return;
         }
 
-        if (!response.credential) {
-          reject(new Error("Google sign-in did not return an ID token."));
+        if (!response.access_token) {
+          reject(new Error("Google sign-in did not return an access token."));
           return;
         }
 
-        resolve(response.credential);
+        resolve(response.access_token);
       },
     });
 
-    googleId.prompt();
+    tokenClient.requestAccessToken();
   });
+}
+
+async function getGoogleUserInfoEmail(accessToken: string) {
+  const response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    return "";
+  }
+
+  const userInfo = await response.json() as {
+    email?: unknown;
+  };
+
+  return typeof userInfo.email === "string" ? userInfo.email.trim().toLowerCase() : "";
 }
 
 export async function signInAdminWithGoogle() {
@@ -299,13 +338,13 @@ export async function signInAdminWithGoogle() {
     await auth.authStateReady();
   }
 
-  const idToken = await getGoogleIdToken();
-  const verifiedEmail = getEmailFromGoogleIdToken(idToken);
-  const credential = GoogleAuthProvider.credential(idToken);
+  const accessToken = await getGoogleAccessToken();
+  const verifiedEmail = await getGoogleUserInfoEmail(accessToken);
+  const credential = GoogleAuthProvider.credential(null, accessToken);
 
   try {
     const result = await signInWithCredential(auth, credential);
-    return requireAdminAccess(result.user, verifiedEmail, idToken);
+    return requireAdminAccess(result.user, verifiedEmail);
   } catch (error) {
     await auth.authStateReady();
 
@@ -313,7 +352,7 @@ export async function signInAdminWithGoogle() {
       isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)
       && auth.currentUser
     ) {
-      return requireAdminAccess(auth.currentUser, verifiedEmail, idToken);
+      return requireAdminAccess(auth.currentUser, verifiedEmail);
     }
 
     if (isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)) {
