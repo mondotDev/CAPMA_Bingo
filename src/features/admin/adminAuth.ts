@@ -43,6 +43,11 @@ declare global {
 
 let googleIdentityScriptReady: Promise<void> | null = null;
 
+type GoogleIdTokenClaims = {
+  email?: unknown;
+  hd?: unknown;
+};
+
 function isAllowedAdminEmail(email?: string | null) {
   const normalizedEmail = email?.trim().toLowerCase();
 
@@ -90,7 +95,11 @@ function storeVerifiedAdminEmail(user: User, email: string) {
 }
 
 export function isCapmaAdminUser(user: User | null) {
-  return isAllowedAdminEmail(user?.email) || isAllowedAdminEmail(getStoredAdminEmail(user));
+  return (
+    isAllowedAdminEmail(user?.email)
+    || isAllowedAdminEmail(user ? getUserProviderEmail(user) : "")
+    || isAllowedAdminEmail(getStoredAdminEmail(user))
+  );
 }
 
 async function hasAdminRecord(user: User) {
@@ -128,33 +137,63 @@ function decodeBase64Url(value: string) {
   return new TextDecoder().decode(bytes);
 }
 
-function getEmailFromGoogleIdToken(idToken: string) {
+function getGoogleIdTokenClaims(idToken: string) {
   const [, payload] = idToken.split(".");
 
   if (!payload) {
-    return "";
+    return null;
   }
 
   try {
-    const claims = JSON.parse(decodeBase64Url(payload)) as {
-      email?: unknown;
-    };
-
-    return typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
+    return JSON.parse(decodeBase64Url(payload)) as GoogleIdTokenClaims;
   } catch {
-    return "";
+    return null;
   }
 }
 
-async function requireAdminAccess(user: User, verifiedEmail?: string) {
-  const email = verifiedEmail?.trim() || user.email?.trim() || getStoredAdminEmail(user);
+function getEmailFromGoogleIdToken(idToken: string) {
+  const claims = getGoogleIdTokenClaims(idToken);
+
+  return typeof claims?.email === "string" ? claims.email.trim().toLowerCase() : "";
+}
+
+function getUserProviderEmail(user: User) {
+  const providerEmail = user.providerData.find((provider) => provider.email)?.email;
+
+  return providerEmail?.trim().toLowerCase() || "";
+}
+
+function getAdminEmailDebugDetail(user: User, idToken?: string) {
+  const tokenParts = idToken ? idToken.split(".").length : 0;
+  const claims = idToken ? getGoogleIdTokenClaims(idToken) : null;
+  const claimKeys = claims ? Object.keys(claims).sort() : [];
+
+  return [
+    `firebase email: ${user.email || "none"}`,
+    `provider email: ${getUserProviderEmail(user) || "none"}`,
+    `stored email: ${getStoredAdminEmail(user) || "none"}`,
+    `Google ID token parts: ${tokenParts}`,
+    `Google token has email claim: ${typeof claims?.email === "string" ? "yes" : "no"}`,
+    typeof claims?.hd === "string" ? `Google hosted domain: ${claims.hd}` : "",
+    claimKeys.length ? `Google claim keys: ${claimKeys.join(", ")}` : "Google claim keys: none",
+  ].filter(Boolean).join("; ");
+}
+
+async function requireAdminAccess(user: User, verifiedEmail?: string, idToken?: string) {
+  const email = (
+    verifiedEmail?.trim()
+    || user.email?.trim()
+    || getUserProviderEmail(user)
+    || getStoredAdminEmail(user)
+  );
 
   if (!isAllowedAdminEmail(email)) {
     const displayEmail = email || "an unknown email";
+    const debugDetail = getAdminEmailDebugDetail(user, idToken);
 
     await signOut(auth);
     throw new Error(
-      `Signed in as ${displayEmail}. Use a CAPMA or Connerly & Associates Google account to access CAPMA admin.`,
+      `Signed in as ${displayEmail}. Use a CAPMA or Connerly & Associates Google account to access CAPMA admin. Details: ${debugDetail}.`,
     );
   }
 
@@ -266,7 +305,7 @@ export async function signInAdminWithGoogle() {
 
   try {
     const result = await signInWithCredential(auth, credential);
-    return requireAdminAccess(result.user, verifiedEmail);
+    return requireAdminAccess(result.user, verifiedEmail, idToken);
   } catch (error) {
     await auth.authStateReady();
 
@@ -274,7 +313,7 @@ export async function signInAdminWithGoogle() {
       isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)
       && auth.currentUser
     ) {
-      return requireAdminAccess(auth.currentUser, verifiedEmail);
+      return requireAdminAccess(auth.currentUser, verifiedEmail, idToken);
     }
 
     if (isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)) {
