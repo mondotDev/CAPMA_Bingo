@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import {
-  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithRedirect,
+  signInWithPopup,
   signOut,
   type User,
 } from "firebase/auth";
@@ -17,6 +16,8 @@ googleProvider.setCustomParameters({
 });
 
 const ADMIN_EMAIL_DOMAINS = ["capma.org", "connerlyandassociates.com"];
+const PROVIDER_ALREADY_LINKED_ERROR = "auth/provider-already-linked";
+
 export function isCapmaAdminUser(user: User | null) {
   const email = user?.email?.trim().toLowerCase();
   return Boolean(
@@ -27,6 +28,15 @@ export function isCapmaAdminUser(user: User | null) {
 async function hasAdminRecord(user: User) {
   const adminSnapshot = await getDoc(doc(db, "admins", user.uid));
   return adminSnapshot.exists();
+}
+
+function isFirebaseAuthError(error: unknown, code: string) {
+  return (
+    typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error as { code?: unknown }).code === code
+  );
 }
 
 async function requireAdminAccess(user: User) {
@@ -51,22 +61,6 @@ async function requireAdminAccess(user: User) {
   return user;
 }
 
-export async function completeAdminGoogleRedirectSignIn() {
-  await auth.authStateReady();
-
-  const result = await getRedirectResult(auth);
-
-  if (result?.user) {
-    return requireAdminAccess(result.user);
-  }
-
-  if (auth.currentUser && !auth.currentUser.isAnonymous) {
-    return requireAdminAccess(auth.currentUser);
-  }
-
-  return null;
-}
-
 export async function signInAdminWithGoogle() {
   await auth.authStateReady();
 
@@ -75,8 +69,22 @@ export async function signInAdminWithGoogle() {
     await auth.authStateReady();
   }
 
-  await signInWithRedirect(auth, googleProvider);
-  return null;
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return requireAdminAccess(result.user);
+  } catch (error) {
+    await auth.authStateReady();
+
+    if (
+      isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)
+      && auth.currentUser
+      && !auth.currentUser.isAnonymous
+    ) {
+      return requireAdminAccess(auth.currentUser);
+    }
+
+    throw error;
+  }
 }
 
 export function useAdminAuth() {

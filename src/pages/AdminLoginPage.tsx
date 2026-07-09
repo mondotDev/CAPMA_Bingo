@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import {
-  completeAdminGoogleRedirectSignIn,
   signInAdminWithGoogle,
   useAdminAuth,
 } from "../features/admin/adminAuth";
@@ -16,40 +15,13 @@ export default function AdminLoginPage() {
     document.title = "CAPMA Bingo | Admin Login";
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function completeRedirect() {
-      try {
-        const redirectUser = await completeAdminGoogleRedirectSignIn();
-
-        if (!cancelled && redirectUser) {
-          navigate("/admin", { replace: true });
-        }
-      } catch (redirectError) {
-        if (!cancelled) {
-          setError(
-            redirectError instanceof Error
-              ? redirectError.message
-              : "Google sign-in was not completed.",
-          );
-        }
-      }
-    }
-
-    void completeRedirect();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [navigate]);
-
   async function handleSignIn() {
     setSubmitting(true);
     setError(null);
 
     try {
       await signInAdminWithGoogle();
+      navigate("/admin", { replace: true });
     } catch (signInError) {
       setError(
         signInError instanceof Error
