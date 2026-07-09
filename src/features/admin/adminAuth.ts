@@ -1,24 +1,48 @@
 import { useEffect, useState } from "react";
-import type { FirebaseError } from "firebase/app";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithCredential,
-  signInWithPopup,
   signOut,
   type User,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { adminAuth, adminAuthPersistenceReady, auth } from "../../lib/firebase";
+import { auth } from "../../lib/firebase";
 import { db } from "../../lib/firebase";
 
-const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({
-  prompt: "select_account",
-});
-
 const ADMIN_EMAIL_DOMAINS = ["capma.org", "connerlyandassociates.com"];
-const PROVIDER_ALREADY_LINKED_ERROR = "auth/provider-already-linked";
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const GOOGLE_IDENTITY_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
+
+type GoogleTokenResponse = {
+  access_token?: string;
+  error?: string;
+  error_description?: string;
+};
+
+type GoogleTokenClient = {
+  requestAccessToken: (options?: { prompt?: string }) => void;
+};
+
+type GoogleIdentityServices = {
+  accounts?: {
+    oauth2?: {
+      initTokenClient: (config: {
+        client_id: string;
+        callback: (response: GoogleTokenResponse) => void;
+        scope: string;
+      }) => GoogleTokenClient;
+    };
+  };
+};
+
+declare global {
+  interface Window {
+    google?: GoogleIdentityServices;
+  }
+}
+
+let googleIdentityScriptReady: Promise<void> | null = null;
 
 export function isCapmaAdminUser(user: User | null) {
   const email = user?.email?.trim().toLowerCase();
@@ -30,46 +54,6 @@ export function isCapmaAdminUser(user: User | null) {
 async function hasAdminRecord(user: User) {
   const adminSnapshot = await getDoc(doc(db, "admins", user.uid));
   return adminSnapshot.exists();
-}
-
-function isFirebaseAuthError(error: unknown, code: string) {
-  return (
-    typeof error === "object"
-    && error !== null
-    && "code" in error
-    && (error as { code?: unknown }).code === code
-  );
-}
-
-function toFirebaseError(error: unknown) {
-  return error as FirebaseError;
-}
-
-function getAuthErrorDetail(error: unknown) {
-  if (typeof error !== "object" || error === null) {
-    return "";
-  }
-
-  const firebaseError = error as {
-    code?: unknown;
-    customData?: {
-      email?: unknown;
-    };
-  };
-  const details = [
-    typeof firebaseError.code === "string" ? `code: ${firebaseError.code}` : "",
-    typeof firebaseError.customData?.email === "string"
-      ? `email: ${firebaseError.customData.email}`
-      : "",
-    auth.currentUser
-      ? `current user: ${auth.currentUser.uid} (${auth.currentUser.isAnonymous ? "anonymous" : "not anonymous"})`
-      : "current user: none",
-    auth.currentUser?.providerData.length
-      ? `providers: ${auth.currentUser.providerData.map((provider) => provider.providerId).join(", ")}`
-      : "",
-  ].filter(Boolean);
-
-  return details.length ? ` Details: ${details.join("; ")}.` : "";
 }
 
 async function requireAdminAccess(user: User) {
@@ -94,56 +78,98 @@ async function requireAdminAccess(user: User) {
   return user;
 }
 
+function loadGoogleIdentityScript() {
+  if (window.google?.accounts?.oauth2) {
+    return Promise.resolve();
+  }
+
+  if (!googleIdentityScriptReady) {
+    googleIdentityScriptReady = new Promise((resolve, reject) => {
+      const existingScript = document.querySelector<HTMLScriptElement>(
+        `script[src="${GOOGLE_IDENTITY_SCRIPT_SRC}"]`,
+      );
+
+      if (existingScript) {
+        existingScript.addEventListener("load", () => resolve(), { once: true });
+        existingScript.addEventListener(
+          "error",
+          () => reject(new Error("Google sign-in script failed to load.")),
+          { once: true },
+        );
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.async = true;
+      script.defer = true;
+      script.src = GOOGLE_IDENTITY_SCRIPT_SRC;
+      script.addEventListener("load", () => resolve(), { once: true });
+      script.addEventListener(
+        "error",
+        () => reject(new Error("Google sign-in script failed to load.")),
+        { once: true },
+      );
+      document.head.appendChild(script);
+    });
+  }
+
+  return googleIdentityScriptReady;
+}
+
+async function getGoogleAccessToken() {
+  if (!GOOGLE_CLIENT_ID) {
+    throw new Error(
+      "Google sign-in is missing VITE_GOOGLE_CLIENT_ID. Add the Firebase Google provider Web client ID to .env.local, rebuild, and redeploy.",
+    );
+  }
+
+  await loadGoogleIdentityScript();
+
+  const oauth2 = window.google?.accounts?.oauth2;
+
+  if (!oauth2) {
+    throw new Error("Google sign-in did not initialize.");
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const tokenClient = oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: "openid email profile",
+      callback: (response) => {
+        if (response.error) {
+          reject(
+            new Error(
+              response.error_description || `Google sign-in failed: ${response.error}`,
+            ),
+          );
+          return;
+        }
+
+        if (!response.access_token) {
+          reject(new Error("Google sign-in did not return an access token."));
+          return;
+        }
+
+        resolve(response.access_token);
+      },
+    });
+
+    tokenClient.requestAccessToken({ prompt: "select_account" });
+  });
+}
+
 export async function signInAdminWithGoogle() {
   await auth.authStateReady();
-  await adminAuthPersistenceReady;
 
   if (auth.currentUser) {
     await signOut(auth);
     await auth.authStateReady();
   }
 
-  if (adminAuth.currentUser) {
-    await signOut(adminAuth);
-  }
-
-  try {
-    const popupResult = await signInWithPopup(adminAuth, googleProvider);
-    const credential = GoogleAuthProvider.credentialFromResult(popupResult);
-
-    if (!credential) {
-      throw new Error("Google sign-in completed, but Firebase did not return a reusable credential.");
-    }
-
-    const result = await signInWithCredential(auth, credential);
-    await signOut(adminAuth);
-    return requireAdminAccess(result.user);
-  } catch (error) {
-    await auth.authStateReady();
-
-    if (
-      isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)
-      && auth.currentUser
-    ) {
-      return requireAdminAccess(auth.currentUser);
-    }
-
-    if (isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)) {
-      const credential = GoogleAuthProvider.credentialFromError(toFirebaseError(error));
-
-      if (credential) {
-        const result = await signInWithCredential(auth, credential);
-        return requireAdminAccess(result.user);
-      }
-
-      throw new Error(
-        "Firebase says this Google provider is already linked, but it did not expose a reusable signed-in admin user."
-          + getAuthErrorDetail(error),
-      );
-    }
-
-    throw error;
-  }
+  const accessToken = await getGoogleAccessToken();
+  const credential = GoogleAuthProvider.credential(null, accessToken);
+  const result = await signInWithCredential(auth, credential);
+  return requireAdminAccess(result.user);
 }
 
 export function useAdminAuth() {

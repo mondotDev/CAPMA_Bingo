@@ -1,5 +1,5 @@
-import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAuth, inMemoryPersistence, setPersistence } from "firebase/auth";
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -12,15 +12,5 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const adminApp = getApps().some((firebaseApp) => firebaseApp.name === "admin")
-  ? getApp("admin")
-  : initializeApp(firebaseConfig, "admin");
-
 export const auth = getAuth(app);
-export const adminAuth = getAuth(adminApp);
 export const db = getFirestore(app);
-
-export const adminAuthPersistenceReady = setPersistence(
-  adminAuth,
-  inMemoryPersistence,
-);
