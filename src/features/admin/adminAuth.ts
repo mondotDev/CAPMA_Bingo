@@ -9,7 +9,7 @@ import {
   type User,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { auth } from "../../lib/firebase";
+import { adminAuth, adminAuthPersistenceReady, auth } from "../../lib/firebase";
 import { db } from "../../lib/firebase";
 
 const googleProvider = new GoogleAuthProvider();
@@ -96,14 +96,27 @@ async function requireAdminAccess(user: User) {
 
 export async function signInAdminWithGoogle() {
   await auth.authStateReady();
+  await adminAuthPersistenceReady;
 
   if (auth.currentUser) {
     await signOut(auth);
     await auth.authStateReady();
   }
 
+  if (adminAuth.currentUser) {
+    await signOut(adminAuth);
+  }
+
   try {
-    const result = await signInWithPopup(auth, googleProvider);
+    const popupResult = await signInWithPopup(adminAuth, googleProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(popupResult);
+
+    if (!credential) {
+      throw new Error("Google sign-in completed, but Firebase did not return a reusable credential.");
+    }
+
+    const result = await signInWithCredential(auth, credential);
+    await signOut(adminAuth);
     return requireAdminAccess(result.user);
   } catch (error) {
     await auth.authStateReady();
