@@ -80,9 +80,11 @@ function getCurrentAuthDetail() {
 
 async function requireAdminAccess(user: User) {
   if (!isCapmaAdminUser(user)) {
+    const email = user.email?.trim() || "an unknown email";
+
     await signOut(auth);
     throw new Error(
-      "Use a CAPMA or Connerly & Associates Google account to access CAPMA admin.",
+      `Signed in as ${email}. Use a CAPMA or Connerly & Associates Google account to access CAPMA admin.`,
     );
   }
 
