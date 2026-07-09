@@ -13,6 +13,7 @@ import { db } from "../../lib/firebase";
 const ADMIN_EMAIL_DOMAINS = ["capma.org", "connerlyandassociates.com"];
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GOOGLE_IDENTITY_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
+const PROVIDER_ALREADY_LINKED_ERROR = "auth/provider-already-linked";
 
 type GoogleTokenResponse = {
   access_token?: string;
@@ -54,6 +55,27 @@ export function isCapmaAdminUser(user: User | null) {
 async function hasAdminRecord(user: User) {
   const adminSnapshot = await getDoc(doc(db, "admins", user.uid));
   return adminSnapshot.exists();
+}
+
+function isFirebaseAuthError(error: unknown, code: string) {
+  return (
+    typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error as { code?: unknown }).code === code
+  );
+}
+
+function getCurrentAuthDetail() {
+  return [
+    auth.currentUser
+      ? `current user: ${auth.currentUser.uid} (${auth.currentUser.isAnonymous ? "anonymous" : "not anonymous"})`
+      : "current user: none",
+    auth.currentUser?.email ? `email: ${auth.currentUser.email}` : "",
+    auth.currentUser?.providerData.length
+      ? `providers: ${auth.currentUser.providerData.map((provider) => provider.providerId).join(", ")}`
+      : "",
+  ].filter(Boolean).join("; ");
 }
 
 async function requireAdminAccess(user: User) {
@@ -168,8 +190,29 @@ export async function signInAdminWithGoogle() {
 
   const accessToken = await getGoogleAccessToken();
   const credential = GoogleAuthProvider.credential(null, accessToken);
-  const result = await signInWithCredential(auth, credential);
-  return requireAdminAccess(result.user);
+
+  try {
+    const result = await signInWithCredential(auth, credential);
+    return requireAdminAccess(result.user);
+  } catch (error) {
+    await auth.authStateReady();
+
+    if (
+      isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)
+      && auth.currentUser
+    ) {
+      return requireAdminAccess(auth.currentUser);
+    }
+
+    if (isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)) {
+      throw new Error(
+        "Firebase rejected the Google credential as already linked, but no reusable signed-in user was exposed. "
+          + getCurrentAuthDetail(),
+      );
+    }
+
+    throw error;
+  }
 }
 
 export function useAdminAuth() {
