@@ -39,6 +39,33 @@ function isFirebaseAuthError(error: unknown, code: string) {
   );
 }
 
+function getAuthErrorDetail(error: unknown) {
+  if (typeof error !== "object" || error === null) {
+    return "";
+  }
+
+  const firebaseError = error as {
+    code?: unknown;
+    customData?: {
+      email?: unknown;
+    };
+  };
+  const details = [
+    typeof firebaseError.code === "string" ? `code: ${firebaseError.code}` : "",
+    typeof firebaseError.customData?.email === "string"
+      ? `email: ${firebaseError.customData.email}`
+      : "",
+    auth.currentUser
+      ? `current user: ${auth.currentUser.uid} (${auth.currentUser.isAnonymous ? "anonymous" : "not anonymous"})`
+      : "current user: none",
+    auth.currentUser?.providerData.length
+      ? `providers: ${auth.currentUser.providerData.map((provider) => provider.providerId).join(", ")}`
+      : "",
+  ].filter(Boolean);
+
+  return details.length ? ` Details: ${details.join("; ")}.` : "";
+}
+
 async function requireAdminAccess(user: User) {
   if (!isCapmaAdminUser(user)) {
     await signOut(auth);
@@ -78,9 +105,15 @@ export async function signInAdminWithGoogle() {
     if (
       isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)
       && auth.currentUser
-      && !auth.currentUser.isAnonymous
     ) {
       return requireAdminAccess(auth.currentUser);
+    }
+
+    if (isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)) {
+      throw new Error(
+        "Firebase says this Google provider is already linked, but it did not expose a reusable signed-in admin user."
+          + getAuthErrorDetail(error),
+      );
     }
 
     throw error;
