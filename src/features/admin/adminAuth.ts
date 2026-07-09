@@ -14,6 +14,7 @@ const ADMIN_EMAIL_DOMAINS = ["capma.org", "connerlyandassociates.com"];
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GOOGLE_IDENTITY_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
 const PROVIDER_ALREADY_LINKED_ERROR = "auth/provider-already-linked";
+const ADMIN_VERIFIED_EMAIL_KEY = "capma-admin-verified-email";
 
 type GoogleTokenResponse = {
   credential?: string;
@@ -42,11 +43,54 @@ declare global {
 
 let googleIdentityScriptReady: Promise<void> | null = null;
 
-export function isCapmaAdminUser(user: User | null) {
-  const email = user?.email?.trim().toLowerCase();
+function isAllowedAdminEmail(email?: string | null) {
+  const normalizedEmail = email?.trim().toLowerCase();
+
   return Boolean(
-    email && ADMIN_EMAIL_DOMAINS.some((domain) => email.endsWith(`@${domain}`)),
+    normalizedEmail
+    && ADMIN_EMAIL_DOMAINS.some((domain) => normalizedEmail.endsWith(`@${domain}`)),
   );
+}
+
+function getStoredAdminEmail(user: User | null) {
+  if (!user) {
+    return "";
+  }
+
+  try {
+    const storedAdmin = window.sessionStorage.getItem(ADMIN_VERIFIED_EMAIL_KEY);
+
+    if (!storedAdmin) {
+      return "";
+    }
+
+    const parsedAdmin = JSON.parse(storedAdmin) as {
+      uid?: unknown;
+      email?: unknown;
+    };
+
+    if (parsedAdmin.uid !== user.uid || typeof parsedAdmin.email !== "string") {
+      return "";
+    }
+
+    return parsedAdmin.email;
+  } catch {
+    return "";
+  }
+}
+
+function storeVerifiedAdminEmail(user: User, email: string) {
+  window.sessionStorage.setItem(
+    ADMIN_VERIFIED_EMAIL_KEY,
+    JSON.stringify({
+      uid: user.uid,
+      email,
+    }),
+  );
+}
+
+export function isCapmaAdminUser(user: User | null) {
+  return isAllowedAdminEmail(user?.email) || isAllowedAdminEmail(getStoredAdminEmail(user));
 }
 
 async function hasAdminRecord(user: User) {
@@ -75,21 +119,50 @@ function getCurrentAuthDetail() {
   ].filter(Boolean).join("; ");
 }
 
-async function requireAdminAccess(user: User) {
-  if (!isCapmaAdminUser(user)) {
-    const email = user.email?.trim() || "an unknown email";
+function decodeBase64Url(value: string) {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const paddedBase64 = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+  const decoded = window.atob(paddedBase64);
+  const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+
+  return new TextDecoder().decode(bytes);
+}
+
+function getEmailFromGoogleIdToken(idToken: string) {
+  const [, payload] = idToken.split(".");
+
+  if (!payload) {
+    return "";
+  }
+
+  try {
+    const claims = JSON.parse(decodeBase64Url(payload)) as {
+      email?: unknown;
+    };
+
+    return typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
+  } catch {
+    return "";
+  }
+}
+
+async function requireAdminAccess(user: User, verifiedEmail?: string) {
+  const email = verifiedEmail?.trim() || user.email?.trim() || getStoredAdminEmail(user);
+
+  if (!isAllowedAdminEmail(email)) {
+    const displayEmail = email || "an unknown email";
 
     await signOut(auth);
     throw new Error(
-      `Signed in as ${email}. Use a CAPMA or Connerly & Associates Google account to access CAPMA admin.`,
+      `Signed in as ${displayEmail}. Use a CAPMA or Connerly & Associates Google account to access CAPMA admin.`,
     );
   }
+
+  storeVerifiedAdminEmail(user, email);
 
   const adminAllowed = await hasAdminRecord(user);
 
   if (!adminAllowed) {
-    const email = user.email?.trim() || "this Google account";
-
     throw new Error(
       `Signed in as ${email}, but no admin allowlist record exists yet. ` +
         `Create a Firestore document at admins/${user.uid}, then try again.`,
@@ -188,11 +261,12 @@ export async function signInAdminWithGoogle() {
   }
 
   const idToken = await getGoogleIdToken();
+  const verifiedEmail = getEmailFromGoogleIdToken(idToken);
   const credential = GoogleAuthProvider.credential(idToken);
 
   try {
     const result = await signInWithCredential(auth, credential);
-    return requireAdminAccess(result.user);
+    return requireAdminAccess(result.user, verifiedEmail);
   } catch (error) {
     await auth.authStateReady();
 
@@ -200,7 +274,7 @@ export async function signInAdminWithGoogle() {
       isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)
       && auth.currentUser
     ) {
-      return requireAdminAccess(auth.currentUser);
+      return requireAdminAccess(auth.currentUser, verifiedEmail);
     }
 
     if (isFirebaseAuthError(error, PROVIDER_ALREADY_LINKED_ERROR)) {
