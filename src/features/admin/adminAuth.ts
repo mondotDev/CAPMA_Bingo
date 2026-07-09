@@ -6,7 +6,7 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDocFromServer } from "firebase/firestore";
 import { auth } from "../../lib/firebase";
 import { db } from "../../lib/firebase";
 
@@ -69,7 +69,7 @@ export function isCapmaAdminUser(user: User | null) {
 }
 
 async function hasAdminRecord(user: User) {
-  const adminSnapshot = await getDoc(doc(db, "admins", user.uid));
+  const adminSnapshot = await getDocFromServer(doc(db, "admins", user.uid));
   return adminSnapshot.exists();
 }
 
@@ -136,7 +136,7 @@ async function requireAdminAccess(user: User, verifiedEmail?: string) {
   if (!adminAllowed) {
     throw new Error(
       `Signed in as ${email}, but no admin allowlist record exists yet. ` +
-        `Create a Firestore document at admins/${user.uid}, then try again.`,
+        `Create a Firestore document at admins/${user.uid} in project ${import.meta.env.VITE_FIREBASE_PROJECT_ID}, then try again.`,
     );
   }
 
