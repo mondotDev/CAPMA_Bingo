@@ -188,8 +188,12 @@ export function useAdminAuth() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
+    let revision = 0;
     const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
+      const currentRevision = ++revision;
       setUser(nextUser);
+      setIsAdmin(false);
+      setLoading(true);
 
       if (!nextUser || !isCapmaAdminUser(nextUser)) {
         setIsAdmin(false);
@@ -199,20 +203,29 @@ export function useAdminAuth() {
 
       try {
         const adminAllowed = await hasAdminRecord(nextUser);
-        setIsAdmin(adminAllowed);
+        if (currentRevision === revision) {
+          setIsAdmin(adminAllowed);
+        }
       } catch {
-        setIsAdmin(false);
+        if (currentRevision === revision) {
+          setIsAdmin(false);
+        }
       } finally {
-        setLoading(false);
+        if (currentRevision === revision) {
+          setLoading(false);
+        }
       }
     });
 
-    return unsubscribe;
+    return () => {
+      revision++;
+      unsubscribe();
+    };
   }, []);
 
   return {
     user,
     loading,
-    isAdmin,
+    isAdmin: isAdmin && user?.uid === auth.currentUser?.uid,
   };
 }
