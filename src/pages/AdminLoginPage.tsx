@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import {
   signInAdminWithGoogle,
   useAdminAuth,
@@ -7,6 +7,8 @@ import {
 
 export default function AdminLoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const destination = searchParams.get("preview") === "1" ? "/" : "/admin";
   const { isAdmin, loading } = useAdminAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +23,7 @@ export default function AdminLoginPage() {
 
     try {
       await signInAdminWithGoogle();
-      navigate("/admin", { replace: true });
+      navigate(destination, { replace: true });
     } catch (signInError) {
       setError(
         signInError instanceof Error
@@ -46,7 +48,7 @@ export default function AdminLoginPage() {
   }
 
   if (isAdmin) {
-    return <Navigate replace to="/admin" />;
+    return <Navigate replace to={destination} />;
   }
 
   return (
