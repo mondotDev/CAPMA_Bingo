@@ -192,7 +192,12 @@ service cloud.firestore {
       allow create, delete: if false;
 
       match /entries/{entryId} {
-        allow get: if isCapmaAdmin() || attendeeOwnsEntry(resource.data);
+        // A new attendee must be able to discover that their entry does not
+        // exist before creating it. Existing entries remain owner/admin-only.
+        allow get: if (
+          isSignedIn()
+          && !exists(/databases/$(database)/documents/events/$(eventId)/entries/$(entryId))
+        ) || isCapmaAdmin() || attendeeOwnsEntry(resource.data);
         allow list: if isCapmaAdmin();
         allow create: if isCapmaAdmin() || attendeeCreateValid(entryId, eventId);
         allow update: if isCapmaAdmin()
